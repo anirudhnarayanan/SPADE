@@ -68,11 +68,15 @@ public class GetVertex extends Instruction
 			{
 				sqlQuery.append(formatString(field, true) + operation + formatString(value, false));
 			}
-			if(!env.IsBaseGraph(subjectGraph))
-			{
-				sqlQuery.append(" AND " + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " +
-						subjectGraph.getVertexTableName() + ")");
-			}
+		}
+		else
+		{
+			sqlQuery.append(" TRUE ");
+		}
+		if(!env.IsBaseGraph(subjectGraph))
+		{
+			sqlQuery.append(" AND " + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " +
+					subjectGraph.getVertexTableName() + ")");
 		}
 		sqlQuery.append(" GROUP BY " + PRIMARY_KEY + ";");
 		qs.executeQuery(sqlQuery.toString());

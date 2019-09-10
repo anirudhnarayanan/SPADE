@@ -132,6 +132,7 @@ public class PostgreSQL extends SQL
     @Override
     public boolean initialize(String arguments)
     {
+        String message;
         try
         {
             Map<String, String> argsMap = CommonFunctions.parseKeyValPairs(arguments);
@@ -147,6 +148,7 @@ public class PostgreSQL extends SQL
             Class.forName(databaseConfigs.getProperty("databaseDriver")).newInstance();
             dbConnection = DriverManager.getConnection(databaseURL, databaseUsername, databasePassword);
             dbConnection.setAutoCommit(false);
+            message = "Connected to PostgreSQL database '" + database + "' with username '" + databaseUsername + "'";
         }
         catch(Exception ex)
         {
@@ -222,6 +224,28 @@ public class PostgreSQL extends SQL
                     + ")";
             dbStatement.execute(createTraceBaseEdge);
 
+            // inserting data into trace tables if not already present
+            String getTraceBaseVertexSize = "SELECT COUNT(*) FROM " + TRACE_BASE_VERTEX;
+            result = dbStatement.executeQuery(getTraceBaseVertexSize);
+            result.next();
+            long vertex_count = result.getLong(1);
+            if(vertex_count <= 0)
+            {
+                String insertIntoTraceBaseVertex = "INSERT INTO " + TRACE_BASE_VERTEX +
+                        " SELECT " + PRIMARY_KEY + " FROM " + VERTEX_TABLE;
+                dbStatement.execute(insertIntoTraceBaseVertex);
+            }
+            String getTraceBaseEdgeSize = "SELECT COUNT(*) FROM " + TRACE_BASE_EDGE;
+            result = dbStatement.executeQuery(getTraceBaseEdgeSize);
+            result.next();
+            long edge_count = result.getLong(1);
+            if(edge_count <= 0)
+            {
+                String insertIntoTraceBaseEdge = "INSERT INTO " + TRACE_BASE_EDGE +
+                        " SELECT " + PRIMARY_KEY + " FROM " + EDGE_TABLE;
+                dbStatement.execute(insertIntoTraceBaseEdge);
+            }
+
             if(buildSecondaryIndexes)
             {
                 String createVertexHashIndex = "CREATE INDEX IF NOT EXISTS hash_index ON vertex USING hash(\"hash\")";
@@ -235,6 +259,7 @@ public class PostgreSQL extends SQL
             dbStatement.close();
             globalTxCheckin(true);
 
+            logger.log(Level.INFO, message);
             return true;
 
         }
@@ -460,10 +485,19 @@ public class PostgreSQL extends SQL
         }
         insertString = insertStringBuilder.substring(0, insertStringBuilder.length() - 2) + ")";
 
+        String traceBaseEdgeInsert = "INSERT INTO "
+                + TRACE_BASE_EDGE
+                + "(\""
+                + PRIMARY_KEY
+                + "\") VALUES ('"
+                + incomingEdge.bigHashCode()
+                + "')";
+
         try
         {
             Statement s = dbConnection.createStatement();
             s.execute(insertString);
+            s.execute(traceBaseEdgeInsert);
             s.close();
             globalTxCheckin(false);
 
@@ -518,7 +552,7 @@ public class PostgreSQL extends SQL
         {
             if((edgeCount % GLOBAL_TX_SIZE == 0) || forcedFlush)
             {
-                StringBuilder edgeHashes = new StringBuilder((int) (edgeCount * 32));
+                StringBuilder edgeHashes = new StringBuilder((int) (edgeCount * 32 + edgeCount));
                 String edgeFileName = "/tmp/bulk_edges.csv";
                 try
                 {
@@ -620,7 +654,7 @@ public class PostgreSQL extends SQL
         {
             if((vertexCount % GLOBAL_TX_SIZE == 0) || forcedFlush)
             {
-                StringBuilder vertexHashes = new StringBuilder((int) (vertexCount * 32));
+                StringBuilder vertexHashes = new StringBuilder((int) (vertexCount * 32 + vertexCount));
                 String vertexFileName = "/tmp/bulk_vertices.csv";
                 try
                 {

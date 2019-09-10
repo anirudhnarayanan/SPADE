@@ -61,9 +61,16 @@ public class GetEdge extends Instruction
 		sqlQuery.append("INSERT INTO " + targetGraph.getEdgeTableName() +
 				" SELECT " + PRIMARY_KEY + " FROM " + PostgreSQLGraph.GetBaseEdgeAnnotationTableName() + " WHERE ");
 		// TODO: handle wild card columns
-		if(!field.equals("*"))
+		if(field != null)
 		{
-			sqlQuery.append(formatString(field, true) + operation + formatString(value, false));
+			if(!field.equals("*"))
+			{
+				sqlQuery.append(formatString(field, true) + operation + formatString(value, false));
+			}
+		}
+		else
+		{
+			sqlQuery.append(" TRUE ");
 		}
 		if(!env.IsBaseGraph(subjectGraph))
 		{
