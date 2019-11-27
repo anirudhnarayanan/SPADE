@@ -19,43 +19,32 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import static spade.query.quickgrail.postgresql.core.CommonVariables.CHILD_VERTEX_KEY;
+import static spade.query.quickgrail.postgresql.core.CommonVariables.EDGE_TABLE;
+import static spade.query.quickgrail.postgresql.core.CommonVariables.PARENT_VERTEX_KEY;
+import static spade.query.quickgrail.postgresql.core.CommonVariables.PRIMARY_KEY;
+
+import spade.query.quickgrail.core.execution.AbstractGetSubgraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
 import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.storage.postgresql.PostgresExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.CHILD_VERTEX_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.EDGE_TABLE;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PARENT_VERTEX_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PRIMARY_KEY;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
 
 /**
  * Let $S be the subject graph and $T be the skeleton graph.
  * The operation $S.getSubgraph($T) is to find all the vertices and edges that
  * are spanned by the skeleton graph.
  */
-public class GetSubgraph extends Instruction
-{
-	private PostgreSQLGraph targetGraph;
-	private PostgreSQLGraph subjectGraph;
-	private PostgreSQLGraph skeletonGraph;
-
-	public GetSubgraph(PostgreSQLGraph targetGraph, PostgreSQLGraph subjectGraph, PostgreSQLGraph skeletonGraph)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.skeletonGraph = skeletonGraph;
+public class GetSubgraph
+	extends AbstractGetSubgraph<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
+	
+	public GetSubgraph(PostgreSQLGraph targetGraph, PostgreSQLGraph subjectGraph, PostgreSQLGraph skeletonGraph){
+		super(targetGraph, subjectGraph, skeletonGraph);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		PostgresExecutor qs = (PostgresExecutor) ctx.getExecutor();
-
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
 		String subjectVertexTable = subjectGraph.getVertexTableName();
@@ -63,10 +52,10 @@ public class GetSubgraph extends Instruction
 		String skeletonVertexTable = skeletonGraph.getVertexTableName();
 		String skeletonEdgeTable = skeletonGraph.getEdgeTableName();
 
-		qs.executeQuery("DROP TABLE IF EXISTS m_answer;" + "CREATE TABLE m_answer (" + PRIMARY_KEY + " UUID);");
+		storage.executeQuery("DROP TABLE IF EXISTS m_answer;" + "CREATE TABLE m_answer (" + PRIMARY_KEY + " UUID);");
 
 		// Get vertices.
-		qs.executeQuery("INSERT INTO m_answer SELECT " + PRIMARY_KEY + " FROM " + skeletonVertexTable +
+		storage.executeQuery("INSERT INTO m_answer SELECT " + PRIMARY_KEY + " FROM " + skeletonVertexTable +
 				" WHERE " + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " + subjectVertexTable + ");" +
 				"INSERT INTO m_answer SELECT \"" + CHILD_VERTEX_KEY + "\" FROM " + EDGE_TABLE +
 				" WHERE " + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " + skeletonEdgeTable + ")" +
@@ -78,35 +67,12 @@ public class GetSubgraph extends Instruction
 				PRIMARY_KEY + " ;");
 
 		// Get edges.
-		qs.executeQuery("INSERT INTO " + targetEdgeTable +
+		storage.executeQuery("INSERT INTO " + targetEdgeTable +
 				" SELECT s." + PRIMARY_KEY + " FROM " + subjectEdgeTable + " s, " + EDGE_TABLE + " e" +
 				" WHERE s." + PRIMARY_KEY + " = e." + PRIMARY_KEY + " AND e.\"" + CHILD_VERTEX_KEY + "\" IN (SELECT " + PRIMARY_KEY +
 				" FROM m_answer)" +
 				" AND e.\"" + PARENT_VERTEX_KEY + "\" IN (SELECT " + PRIMARY_KEY + " FROM m_answer) GROUP BY s." + PRIMARY_KEY + " ;");
 
-		qs.executeQuery("DROP TABLE IF EXISTS m_answer;");
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "GetSubgraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("skeletonGraph");
-		inline_field_values.add(skeletonGraph.getName());
+		storage.executeQuery("DROP TABLE IF EXISTS m_answer;");
 	}
 }

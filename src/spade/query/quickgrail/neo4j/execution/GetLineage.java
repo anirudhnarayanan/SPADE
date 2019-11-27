@@ -19,51 +19,31 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
+import static spade.query.quickgrail.neo4j.core.CommonVariables.EDGE_ALIAS;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.VERTEX_ALIAS;
+import static spade.query.quickgrail.neo4j.core.Neo4jStorageHelper.formatSymbol;
+
 import spade.query.quickgrail.core.entities.Graph.Direction;
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractGetLineage;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
 import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
-import spade.storage.neo4j.Neo4jExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.EDGE_ALIAS;
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.VERTEX_ALIAS;
-import static spade.query.quickgrail.neo4j.utility.Neo4jUtil.formatSymbol;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
+import spade.storage.Neo4j;
 
 /**
  * Get the lineage of a set of vertices in a graph.
  */
-public class GetLineage extends Instruction
-{
-	// Output graph.
-	private Neo4jGraph targetGraph;
-	// Input graph.
-	private Neo4jGraph subjectGraph;
-	// Set of starting vertices.
-	private Neo4jGraph startGraph;
-	// Max depth.
-	private Integer depth;
-	// Direction (ancestors / descendants, or both).
-	private Direction direction;
+public class GetLineage
+	extends AbstractGetLineage<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
 
 	public GetLineage(Neo4jGraph targetGraph, Neo4jGraph subjectGraph,
-					  Neo4jGraph startGraph, Integer depth, Direction direction)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.startGraph = startGraph;
-		this.depth = depth;
-		this.direction = direction;
+					  Neo4jGraph startGraph, Integer depth, Direction direction){
+		super(targetGraph, subjectGraph, startGraph, depth, direction);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		Neo4jExecutor ns = (Neo4jExecutor) ctx.getExecutor();
-
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
 		String subjectVertexTable = subjectGraph.getVertexTableName();
@@ -100,33 +80,6 @@ public class GetLineage extends Instruction
 				EDGE_ALIAS + ".quickgrail_symbol " + " ELSE " + EDGE_ALIAS + ".quickgrail_symbol + '," +
 				targetEdgeTable + ",' END";
 
-		ns.executeQuery(cypherQuery);
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "GetLineage";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("startGraph");
-		inline_field_values.add(startGraph.getName());
-		inline_field_names.add("depth");
-		inline_field_values.add(String.valueOf(depth));
-		inline_field_names.add("direction");
-		inline_field_values.add(direction.name().substring(1));
+		storage.executeQuery(cypherQuery);
 	}
 }

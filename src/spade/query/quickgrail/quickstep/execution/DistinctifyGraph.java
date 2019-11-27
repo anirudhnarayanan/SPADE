@@ -19,65 +19,34 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractDistinctifyGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
 import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
-import spade.storage.quickstep.QuickstepExecutor;
-
-import java.util.ArrayList;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
+import spade.storage.Quickstep;
 
 /**
  * Remove all duplicated vertices and edges.
  */
-public class DistinctifyGraph extends Instruction
-{
-	// Input graph.
-	private QuickstepGraph targetGraph;
-	// Output graph.
-	private QuickstepGraph sourceGraph;
+public class DistinctifyGraph
+	extends AbstractDistinctifyGraph<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
 
-	public DistinctifyGraph(QuickstepGraph targetGraph, QuickstepGraph sourceGraph)
-	{
-		this.targetGraph = targetGraph;
-		this.sourceGraph = sourceGraph;
+	public DistinctifyGraph(QuickstepGraph targetGraph, QuickstepGraph sourceGraph){
+		super(targetGraph, sourceGraph);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
 		String sourceVertexTable = sourceGraph.getVertexTableName();
 		String sourceEdgeTable = sourceGraph.getEdgeTableName();
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
 
-		QuickstepExecutor qs = (QuickstepExecutor) ctx.getExecutor();
-		qs.executeQuery("\\analyzerange " + sourceVertexTable + " " + sourceEdgeTable + "\n");
-		qs.executeQuery("INSERT INTO " + targetVertexTable +
+		storage.executeQuery("\\analyzerange " + sourceVertexTable + " " + sourceEdgeTable + "\n");
+		storage.executeQuery("INSERT INTO " + targetVertexTable +
 				" SELECT id FROM " + sourceVertexTable + " GROUP BY id;");
-		qs.executeQuery("INSERT INTO " + targetEdgeTable +
+		storage.executeQuery("INSERT INTO " + targetEdgeTable +
 				" SELECT id FROM " + sourceEdgeTable + " GROUP BY id;");
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "DistinctifyGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("sourceGraph");
-		inline_field_values.add(sourceGraph.getName());
 	}
 }

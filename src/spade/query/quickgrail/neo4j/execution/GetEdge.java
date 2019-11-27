@@ -19,45 +19,29 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import static spade.query.quickgrail.neo4j.core.Neo4jStorageHelper.formatString;
+import static spade.query.quickgrail.neo4j.core.Neo4jStorageHelper.formatSymbol;
+
+import spade.query.quickgrail.core.execution.AbstractGetEdge;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
+import spade.query.quickgrail.neo4j.core.Neo4jStorageHelper;
 import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
-import spade.query.quickgrail.neo4j.utility.Neo4jUtil;
-import spade.storage.neo4j.Neo4jExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.neo4j.utility.Neo4jUtil.formatString;
-import static spade.query.quickgrail.neo4j.utility.Neo4jUtil.formatSymbol;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
+import spade.storage.Neo4j;
 
 /**
  * Get the a set of edges in a graph.
  */
-public class GetEdge extends Instruction
-{
-	// Output graph.
-	private Neo4jGraph targetGraph;
-	// Input graph.
-	private Neo4jGraph subjectGraph;
-	private String field;
-	private String operation;
-	private String value;
+public class GetEdge 
+	extends AbstractGetEdge<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
 
-	public GetEdge(Neo4jGraph targetGraph, Neo4jGraph subjectGraph, String field, String operation, String value)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.field = field;
-		this.operation = operation;
-		this.value = value;
+	public GetEdge(Neo4jGraph targetGraph, Neo4jGraph subjectGraph, String field, String operation, String value){
+		super(targetGraph, subjectGraph, field, operation, value);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		Neo4jExecutor ns = (Neo4jExecutor) ctx.getExecutor();
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){
 		String subjectEdgeTable = subjectGraph.getEdgeTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
 
@@ -89,34 +73,7 @@ public class GetEdge extends Instruction
 				condition = " TRUE ";
 			}
 		}
-		String cypherQuery = Neo4jUtil.edgeSymbolQuery(condition, targetEdgeTable);
-		ns.executeQuery(cypherQuery);
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "GetEdge";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("field");
-		inline_field_values.add(field);
-		inline_field_names.add("operation");
-		inline_field_values.add(operation);
-		inline_field_names.add("value");
-		inline_field_values.add(value);
+		String cypherQuery = Neo4jStorageHelper.edgeSymbolQuery(condition, targetEdgeTable);
+		storage.executeQuery(cypherQuery);
 	}
 }

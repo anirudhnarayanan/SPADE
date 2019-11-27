@@ -19,47 +19,36 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
-import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
-import spade.storage.neo4j.Neo4jExecutor;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.EDGE_ALIAS;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.VERTEX_ALIAS;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.RelationshipTypes.EDGE;
 
 import java.util.ArrayList;
 
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.EDGE_ALIAS;
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.RelationshipTypes.EDGE;
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.VERTEX_ALIAS;
+import spade.query.quickgrail.core.execution.AbstractCollapseEdge;
+import spade.query.quickgrail.core.kernel.ExecutionContext;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
+import spade.storage.Neo4j;
 
 /**
  * Collapse all edges whose specified fields are the same.
  */
-public class CollapseEdge extends Instruction
-{
-	// Input graph.
-	private Neo4jGraph targetGraph;
-	// Output graph.
-	private Neo4jGraph sourceGraph;
-	// Fields to check.
-	private ArrayList<String> fields;
+public class CollapseEdge 
+	extends AbstractCollapseEdge<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
 
-	public CollapseEdge(Neo4jGraph targetGraph, Neo4jGraph sourceGraph, ArrayList<String> fields)
-	{
-		this.targetGraph = targetGraph;
-		this.sourceGraph = sourceGraph;
-		this.fields = fields;
+	public CollapseEdge(Neo4jGraph targetGraph, Neo4jGraph sourceGraph, ArrayList<String> fields){
+		super(targetGraph, sourceGraph, fields);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){
 		String sourceVertexTable = sourceGraph.getVertexTableName();
 		String sourceEdgeTable = sourceGraph.getEdgeTableName();
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
 
-		Neo4jExecutor ns = (Neo4jExecutor) ctx.getExecutor();
 		String cypherQuery = "MATCH (" + VERTEX_ALIAS + ":" + sourceVertexTable + ")-[edge:" + EDGE.toString() +
 				"]->(n" + ":" + sourceVertexTable + ") ";
 		if(!env.IsBaseGraph(sourceGraph))
@@ -71,7 +60,7 @@ public class CollapseEdge extends Instruction
 		cypherQuery += " WITH head(collect(edge)) AS " + EDGE_ALIAS;
 
 		StringBuilder groups = new StringBuilder(20);
-		for(String field : fields)
+		for(String field : getFields())
 		{
 			groups.append(", edge.");
 			groups.append(field);
@@ -85,7 +74,7 @@ public class CollapseEdge extends Instruction
 				targetEdgeTable + ",' THEN " + EDGE_ALIAS + ".quickgrail_symbol " +
 				" ELSE " + EDGE_ALIAS + ".quickgrail_symbol + '," + targetEdgeTable + ",' END";
 
-		ns.executeQuery(cypherQuery);
+		storage.executeQuery(cypherQuery);
 	}
 
 	// quickstep
@@ -105,25 +94,4 @@ public class CollapseEdge extends Instruction
 	// MATCH (v)-[e]->(n)
 	// WITH head(collect(e)) as edge, e.field1 as field1, e.field2 as field2, ...
 	// RETURN edge, field1, field2, ...
-
-	@Override
-	public String getLabel()
-	{
-		return "CollapseEdge";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("sourceGraph");
-		inline_field_values.add(sourceGraph.getName());
-	}
 }

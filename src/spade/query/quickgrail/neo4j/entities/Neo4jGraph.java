@@ -19,21 +19,16 @@
  */
 package spade.query.quickgrail.neo4j.entities;
 
-import spade.query.quickgrail.core.entities.EntityType;
+import static spade.query.quickgrail.neo4j.core.Neo4jStorageHelper.removeDollar;
+
 import spade.query.quickgrail.core.entities.Graph;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-import spade.query.quickgrail.neo4j.utility.CommonVariables;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.neo4j.utility.Neo4jUtil.removeDollar;
+import spade.query.quickgrail.neo4j.core.CommonVariables;
 
 /**
  * Intermediate representation for a graph in QuickGrail optimizer.
  */
 public class Neo4jGraph extends Graph
 {
-	// Each graph consists of two tables: <name>_vertex and <name>_edge.
 	private String name;
 
 	public Neo4jGraph(String name)
@@ -84,7 +79,7 @@ public class Neo4jGraph extends Graph
 		this.name = name;
 	}
 
-	@Override
+//	@Override
 	public String getVertexTableName()
 	{
 		if(name.equals("$base"))
@@ -92,7 +87,7 @@ public class Neo4jGraph extends Graph
 		return removeDollar(name);
 	}
 
-	@Override
+//	@Override
 	public String getEdgeTableName()
 	{
 		if(name.equals("$base"))
@@ -100,34 +95,12 @@ public class Neo4jGraph extends Graph
 		return removeDollar(name);
 	}
 
-	@Override
+//	@Override
 	public String getTableName(GraphComponent component)
 	{
 		return component == GraphComponent.kVertex ? getVertexTableName() : getEdgeTableName();
 	}
 
-	@Override
-	public EntityType getEntityType()
-	{
-		return EntityType.kGraph;
-	}
 
-	@Override
-	public String getLabel()
-	{
-		return "Graph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("name");
-		inline_field_values.add(name);
-	}
+	
 }

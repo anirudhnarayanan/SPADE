@@ -41,7 +41,12 @@ import spade.core.AbstractStorage;
 import spade.core.AbstractVertex;
 import spade.core.Graph;
 import spade.core.Settings;
-import spade.query.quickgrail.quickstep.utility.QuickstepUtil;
+import spade.query.quickgrail.core.kernel.QuickGrailExecutor;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
+import spade.query.quickgrail.quickstep.core.QuickstepResolver;
+import spade.query.quickgrail.quickstep.core.QuickstepUtil;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
 import spade.storage.quickstep.GraphBatch;
 import spade.storage.quickstep.QuickstepClient;
 import spade.storage.quickstep.QuickstepConfiguration;
@@ -53,497 +58,516 @@ import spade.utility.map.external.ExternalMapArgument;
 import spade.utility.map.external.ExternalMapManager;
 
 public class Quickstep extends AbstractStorage {
-  private PrintWriter debugLogWriter = null;
-  private long timeExecutionStart;
-  private QuickstepConfiguration conf;
+	private PrintWriter debugLogWriter = null;
+	private long timeExecutionStart;
+	private QuickstepConfiguration conf;
 
-  private final String md5MapId = "md5ToIdMapId";
-  private ExternalMap<String, Integer> md5ToIdMap;
+	private final String md5MapId = "md5ToIdMapId";
+	private ExternalMap<String, Integer> md5ToIdMap;
 
-  private long totalNumVerticesProcessed = 0;
-  private long totalNumEdgesProcessed = 0;
+	private long totalNumVerticesProcessed = 0;
+	private long totalNumEdgesProcessed = 0;
 
-  /**
-   * Helper class for bulk loading graph data into Quickstep in batches.
-   */
-  private class CopyManager implements Callable<Void> {
-    // Double buffer, simple producer-consumer pattern.
-    private GraphBatch batchBuffer = new GraphBatch();
+	/**
+	 * Helper class for bulk loading graph data into Quickstep in batches.
+	 */
+	private class CopyManager implements Callable<Void> {
+		// Double buffer, simple producer-consumer pattern.
+		private GraphBatch batchBuffer = new GraphBatch();
 
-    private StringBuilder vertexMD5 = new StringBuilder();
-    private StringBuilder vertexAnnos = new StringBuilder();
-    private StringBuilder edgeLinks = new StringBuilder();
-    private StringBuilder edgeAnnos = new StringBuilder();
+		private StringBuilder vertexMD5 = new StringBuilder();
+		private StringBuilder vertexAnnos = new StringBuilder();
+		private StringBuilder edgeLinks = new StringBuilder();
+		private StringBuilder edgeAnnos = new StringBuilder();
 
-    private ExecutorService batchExecutor;
-    private Future<Void> batchFuture;
+		private ExecutorService batchExecutor;
+		private Future<Void> batchFuture;
 
-    private int maxVertexKeyLength;
-    private int maxVertexValueLength;
-    private int maxEdgeKeyLength;
-    private int maxEdgeValueLength;
+		private int maxVertexKeyLength;
+		private int maxVertexValueLength;
+		private int maxEdgeKeyLength;
+		private int maxEdgeValueLength;
+		
+		private Quickstep parentStorageInstance;
 
-    public void initialize() {
-      batchExecutor = Executors.newSingleThreadExecutor();
-      maxVertexKeyLength = conf.getMaxVertexKeyLength();
-      maxVertexValueLength = conf.getMaxVertexValueLength();
-      maxEdgeKeyLength = conf.getMaxEdgeKeyLength();
-      maxEdgeValueLength = conf.getMaxEdgeValueLength();
-    }
+		public void initialize(Quickstep parentStorageInstance) {
+			this.parentStorageInstance = parentStorageInstance;
+			batchExecutor = Executors.newSingleThreadExecutor();
+			maxVertexKeyLength = conf.getMaxVertexKeyLength();
+			maxVertexValueLength = conf.getMaxVertexValueLength();
+			maxEdgeKeyLength = conf.getMaxEdgeKeyLength();
+			maxEdgeValueLength = conf.getMaxEdgeValueLength();
+		}
 
-    public void shutdown() {
-      finalizeBatch();
-      batchExecutor.shutdown();
-      batchExecutor = null;
-    }
+		public void shutdown() {
+			finalizeBatch();
+			batchExecutor.shutdown();
+			batchExecutor = null;
+		}
 
-    public void initStorage() {
-      StringBuilder initQuery = new StringBuilder();
-      initQuery.append("CREATE TABLE vertex (\n" +
-                       "  id INT,\n" +
-                       "  md5 CHAR(32)\n" +
-                       ") WITH BLOCKPROPERTIES (\n" +
-                       "  TYPE columnstore,\n" +
-                       "  SORT id);");
-      initQuery.append("CREATE TABLE edge (\n" +
-                       "  id LONG,\n" +
-                       "  src INT,\n" +
-                       "  dst INT\n" +
-                       ") WITH BLOCKPROPERTIES (\n" +
-                       "  TYPE columnstore,\n" +
-                       "  SORT id);");
-      initQuery.append("CREATE TABLE vertex_anno (\n" +
-                       "  id INT,\n" +
-                       "  field VARCHAR(" + maxVertexKeyLength + "),\n" +
-                       "  value VARCHAR(" + maxVertexValueLength + ")\n" +
-                       ") WITH BLOCKPROPERTIES (\n" +
-                       "  TYPE compressed_columnstore,\n" +
-                       "  SORT id,\n" +
-                       "  COMPRESS (id, field, value));");
-      initQuery.append("CREATE TABLE edge_anno (\n" +
-                       "  id LONG,\n" +
-                       "  field VARCHAR(" + maxEdgeKeyLength + "),\n" +
-                       "  value VARCHAR(" + maxEdgeValueLength + ")\n" +
-                       ") WITH BLOCKPROPERTIES (\n" +
-                       "  TYPE compressed_columnstore,\n" +
-                       "  SORT id,\n" +
-                       "  COMPRESS (id, field, value));");
-      initQuery.append("CREATE TABLE trace_base_vertex (\n" +
-                       "  id INT\n" +
-                       ") WITH BLOCKPROPERTIES (\n" +
-                       "  TYPE columnstore, SORT id);");
-      initQuery.append("CREATE TABLE trace_base_edge (\n" +
-                       "  id LONG\n" +
-                       ") WITH BLOCKPROPERTIES (\n" +
-                       "  TYPE columnstore, SORT id);");
-      executeQuery(initQuery.toString());
-    }
+		public void initStorage() {
+			StringBuilder initQuery = new StringBuilder();
+			initQuery.append("CREATE TABLE vertex (\n" +
+					"  id INT,\n" +
+					"  md5 CHAR(32)\n" +
+					") WITH BLOCKPROPERTIES (\n" +
+					"  TYPE columnstore,\n" +
+					"  SORT id);");
+			initQuery.append("CREATE TABLE edge (\n" +
+					"  id LONG,\n" +
+					"  src INT,\n" +
+					"  dst INT\n" +
+					") WITH BLOCKPROPERTIES (\n" +
+					"  TYPE columnstore,\n" +
+					"  SORT id);");
+			initQuery.append("CREATE TABLE vertex_anno (\n" +
+					"  id INT,\n" +
+					"  field VARCHAR(" + maxVertexKeyLength + "),\n" +
+					"  value VARCHAR(" + maxVertexValueLength + ")\n" +
+					") WITH BLOCKPROPERTIES (\n" +
+					"  TYPE compressed_columnstore,\n" +
+					"  SORT id,\n" +
+					"  COMPRESS (id, field, value));");
+			initQuery.append("CREATE TABLE edge_anno (\n" +
+					"  id LONG,\n" +
+					"  field VARCHAR(" + maxEdgeKeyLength + "),\n" +
+					"  value VARCHAR(" + maxEdgeValueLength + ")\n" +
+					") WITH BLOCKPROPERTIES (\n" +
+					"  TYPE compressed_columnstore,\n" +
+					"  SORT id,\n" +
+					"  COMPRESS (id, field, value));");
+			initQuery.append("CREATE TABLE trace_base_vertex (\n" +
+					"  id INT\n" +
+					") WITH BLOCKPROPERTIES (\n" +
+					"  TYPE columnstore, SORT id);");
+			initQuery.append("CREATE TABLE trace_base_edge (\n" +
+					"  id LONG\n" +
+					") WITH BLOCKPROPERTIES (\n" +
+					"  TYPE columnstore, SORT id);");
+			executeQuery(initQuery.toString());
+		}
 
-    public void resetStorage() {
-      ArrayList<String> allTables = QuickstepUtil.GetAllTableNames(qs);
-      if (!allTables.isEmpty()) {
-        StringBuilder dropQuery = new StringBuilder();
-        for (String table : allTables) {
-          dropQuery.append("DROP TABLE " + table + ";\n");
-        }
-        executeQuery(dropQuery.toString());
-      }
-      initStorage();
-    }
+		public void resetStorage() {
+			ArrayList<String> allTables = QuickstepUtil.GetAllTableNames(parentStorageInstance);
+			if (!allTables.isEmpty()) {
+				StringBuilder dropQuery = new StringBuilder();
+				for (String table : allTables) {
+					dropQuery.append("DROP TABLE " + table + ";\n");
+				}
+				executeQuery(dropQuery.toString());
+			}
+			initStorage();
+		}
 
-    public void resetStorageIfInvalid() {
-      ArrayList<String> allTables = QuickstepUtil.GetAllTableNames(qs);
-      HashSet<String> tableSet = new HashSet<String>();
-      for (String table : allTables) {
-        tableSet.add(table);
-      }
-      String[] requiredTables = new String[] {
-          "vertex",
-          "vertex_anno",
-          "edge",
-          "edge_anno",
-          "trace_base_vertex",
-          "trace_base_edge",
-      };
+		public void resetStorageIfInvalid() {
+			ArrayList<String> allTables = QuickstepUtil.GetAllTableNames(parentStorageInstance);
+			HashSet<String> tableSet = new HashSet<String>();
+			for (String table : allTables) {
+				tableSet.add(table);
+			}
+			String[] requiredTables = new String[] {
+					"vertex",
+					"vertex_anno",
+					"edge",
+					"edge_anno",
+					"trace_base_vertex",
+					"trace_base_edge",
+			};
 
-      boolean isInvalid = false;
-      for (String table : requiredTables) {
-        if (!tableSet.contains(table)) {
-          isInvalid = true;
-        }
-      }
-      if (isInvalid) {
-        resetStorage();
-      }
-    }
+			boolean isInvalid = false;
+			for (String table : requiredTables) {
+				if (!tableSet.contains(table)) {
+					isInvalid = true;
+				}
+			}
+			if (isInvalid) {
+				resetStorage();
+			}
+		}
 
-    public void submitBatch(GraphBatch batch) {
-      qs.logInfo("Submit batch " + batch.getBatchID() + " at " +
-                 formatTime(System.currentTimeMillis() - timeExecutionStart));
-      finalizeBatch();
-      batchBuffer.swap(batch);
-      batchBuffer.setBatchID(batch.getBatchID());
-      batch.reset();
-      batch.increaseBatchID();
-      batchFuture = batchExecutor.submit(this);
-    }
+		public void submitBatch(GraphBatch batch) {
+			qs.logInfo("Submit batch " + batch.getBatchID() + " at " +
+					formatTime(System.currentTimeMillis() - timeExecutionStart));
+			finalizeBatch();
+			batchBuffer.swap(batch);
+			batchBuffer.setBatchID(batch.getBatchID());
+			batch.reset();
+			batch.increaseBatchID();
+			batchFuture = batchExecutor.submit(this);
+		}
 
-    private void finalizeBatch() {
-      if (batchFuture != null) {
-        try {
-          batchFuture.get();
-        } catch (InterruptedException | ExecutionException e) {
-          logger.log(Level.SEVERE, e.getMessage());
-        }
-        batchFuture = null;
-      }
-    }
+		private void finalizeBatch() {
+			if (batchFuture != null) {
+				try {
+					batchFuture.get();
+				} catch (InterruptedException | ExecutionException e) {
+					logger.log(Level.SEVERE, e.getMessage());
+				}
+				batchFuture = null;
+			}
+		}
 
-    @Override
-    public Void call() {
-      try {
-        processBatch();
-      } catch (Exception e) {
-        StringWriter sw = new StringWriter();
-        e.printStackTrace(new PrintWriter(sw));
-        logger.log(Level.SEVERE, sw.toString());
-      }
-      totalNumVerticesProcessed += batchBuffer.getVertices().size();
-      totalNumEdgesProcessed += batchBuffer.getEdges().size();
-      qs.logInfo("Total number of vertices processed: " + totalNumVerticesProcessed);
-      qs.logInfo("Total number of edges processed: " + totalNumEdgesProcessed);
-      batchBuffer.reset();
-      return null;
-    }
+		@Override
+		public Void call() {
+			try {
+				processBatch();
+			} catch (Exception e) {
+				StringWriter sw = new StringWriter();
+				e.printStackTrace(new PrintWriter(sw));
+				logger.log(Level.SEVERE, sw.toString());
+			}
+			totalNumVerticesProcessed += batchBuffer.getVertices().size();
+			totalNumEdgesProcessed += batchBuffer.getEdges().size();
+			qs.logInfo("Total number of vertices processed: " + totalNumVerticesProcessed);
+			qs.logInfo("Total number of edges processed: " + totalNumEdgesProcessed);
+			batchBuffer.reset();
+			return null;
+		}
 
-    private void processBatch() {
-      qs.logInfo("Start processing batch " + batchBuffer.getBatchID() + " at " +
-                 formatTime(System.currentTimeMillis() - timeExecutionStart));
+		private void processBatch() {
+			qs.logInfo("Start processing batch " + batchBuffer.getBatchID() + " at " +
+					formatTime(System.currentTimeMillis() - timeExecutionStart));
 
-      int lastNumVertices;
-      try {
-        String sn = qs.executeQuery("COPY SELECT COUNT(*) FROM trace_base_vertex TO stdout;");
-        lastNumVertices = Integer.parseInt(sn.trim());
-      } catch (Exception e) {
-        logger.log(Level.SEVERE, e.getMessage());
-        return;
-      }
+			int lastNumVertices;
+			try {
+				String sn = qs.executeQuery("COPY SELECT COUNT(*) FROM trace_base_vertex TO stdout;");
+				lastNumVertices = Integer.parseInt(sn.trim());
+			} catch (Exception e) {
+				logger.log(Level.SEVERE, e.getMessage());
+				return;
+			}
 
-      long lastNumEdges;
-      try {
-        String sn = qs.executeQuery("COPY SELECT COUNT(*) FROM trace_base_edge TO stdout;");
-        lastNumEdges = Long.parseLong(sn.trim());
-      } catch (Exception e) {
-        logger.log(Level.SEVERE, e.getMessage());
-        return;
-      }
+			long lastNumEdges;
+			try {
+				String sn = qs.executeQuery("COPY SELECT COUNT(*) FROM trace_base_edge TO stdout;");
+				lastNumEdges = Long.parseLong(sn.trim());
+			} catch (Exception e) {
+				logger.log(Level.SEVERE, e.getMessage());
+				return;
+			}
 
-      int vertexIdCounter = lastNumVertices;
-      long edgeIdCounter = lastNumEdges;
+			int vertexIdCounter = lastNumVertices;
+			long edgeIdCounter = lastNumEdges;
 
-      vertexMD5.setLength(0);
-      vertexAnnos.setLength(0);
-      for (AbstractVertex vertex : batchBuffer.getVertices()) {
-        final String md5 = vertex.bigHashCode();
-        if (md5ToIdMap.get(md5) != null) {
-          continue;
-        }
-        appendVertex(vertex, md5, ++vertexIdCounter);
-      }
+			vertexMD5.setLength(0);
+			vertexAnnos.setLength(0);
+			for (AbstractVertex vertex : batchBuffer.getVertices()) {
+				final String md5 = vertex.bigHashCode();
+				if (md5ToIdMap.get(md5) != null) {
+					continue;
+				}
+				appendVertex(vertex, md5, ++vertexIdCounter);
+			}
 
-      edgeLinks.setLength(0);
-      edgeAnnos.setLength(0);
-      for (AbstractEdge edge : batchBuffer.getEdges()) {
-        final AbstractVertex srcVertex = edge.getChildVertex();
-        final AbstractVertex dstVertex = edge.getParentVertex();
-        final String srcVertexMd5 = srcVertex.bigHashCode();
-        final String dstVertexMd5 = dstVertex.bigHashCode();
+			edgeLinks.setLength(0);
+			edgeAnnos.setLength(0);
+			for (AbstractEdge edge : batchBuffer.getEdges()) {
+				final AbstractVertex srcVertex = edge.getChildVertex();
+				final AbstractVertex dstVertex = edge.getParentVertex();
+				final String srcVertexMd5 = srcVertex.bigHashCode();
+				final String dstVertexMd5 = dstVertex.bigHashCode();
 
-        Integer srcVertexId = md5ToIdMap.get(srcVertexMd5);
-        if (srcVertexId == null) {
-          srcVertexId = ++vertexIdCounter;
-          appendVertex(srcVertex, srcVertexMd5, srcVertexId);
-        }
-        Integer dstVertexId = md5ToIdMap.get(dstVertexMd5);
-        if (dstVertexId == null) {
-          dstVertexId = ++vertexIdCounter;
-          appendVertex(dstVertex, dstVertexMd5, dstVertexId);
-        }
-        appendEdge(edge, ++edgeIdCounter, srcVertexId, dstVertexId);
-      }
+				Integer srcVertexId = md5ToIdMap.get(srcVertexMd5);
+				if (srcVertexId == null) {
+					srcVertexId = ++vertexIdCounter;
+					appendVertex(srcVertex, srcVertexMd5, srcVertexId);
+				}
+				Integer dstVertexId = md5ToIdMap.get(dstVertexMd5);
+				if (dstVertexId == null) {
+					dstVertexId = ++vertexIdCounter;
+					appendVertex(dstVertex, dstVertexMd5, dstVertexId);
+				}
+				appendEdge(edge, ++edgeIdCounter, srcVertexId, dstVertexId);
+			}
 
-      if (vertexIdCounter > lastNumVertices) {
-        qs.submitQuery("INSERT INTO trace_base_vertex SELECT idx" +
-                       " FROM generate_series(" + (lastNumVertices + 1) +
-                       ", " + vertexIdCounter +  ") AS t(idx);");
+			if (vertexIdCounter > lastNumVertices) {
+				qs.submitQuery("INSERT INTO trace_base_vertex SELECT idx" +
+						" FROM generate_series(" + (lastNumVertices + 1) +
+						", " + vertexIdCounter +  ") AS t(idx);");
 
-        qs.submitQuery("COPY vertex FROM stdin WITH (DELIMITER '|');",
-                       vertexMD5.toString());
+				qs.submitQuery("COPY vertex FROM stdin WITH (DELIMITER '|');",
+						vertexMD5.toString());
 
-        qs.submitQuery("COPY vertex_anno FROM stdin WITH (DELIMITER '|');",
-                       vertexAnnos.toString());
-      }
+				qs.submitQuery("COPY vertex_anno FROM stdin WITH (DELIMITER '|');",
+						vertexAnnos.toString());
+			}
 
-      if (edgeIdCounter > lastNumEdges) {
-        qs.submitQuery("INSERT INTO trace_base_edge SELECT idx" +
-                       " FROM generate_series(" + (lastNumEdges + 1) +
-                       ", " + edgeIdCounter +  ") AS t(idx);");
+			if (edgeIdCounter > lastNumEdges) {
+				qs.submitQuery("INSERT INTO trace_base_edge SELECT idx" +
+						" FROM generate_series(" + (lastNumEdges + 1) +
+						", " + edgeIdCounter +  ") AS t(idx);");
 
-        qs.submitQuery("COPY edge FROM stdin WITH (DELIMITER '|');",
-                       edgeLinks.toString());
+				qs.submitQuery("COPY edge FROM stdin WITH (DELIMITER '|');",
+						edgeLinks.toString());
 
-        qs.submitQuery("COPY edge_anno FROM stdin WITH (DELIMITER '|');",
-                       edgeAnnos.toString());
-      }
+				qs.submitQuery("COPY edge_anno FROM stdin WITH (DELIMITER '|');",
+						edgeAnnos.toString());
+			}
 
-      // For stable measurement of loading time, we just finalize each batch here ...
-      qs.finalizeQuery();
+			// For stable measurement of loading time, we just finalize each batch here ...
+			qs.finalizeQuery();
 
-      qs.logInfo("Done processing batch " + batchBuffer.getBatchID() + " at " +
-                 formatTime(System.currentTimeMillis() - timeExecutionStart));
-    }
+			qs.logInfo("Done processing batch " + batchBuffer.getBatchID() + " at " +
+					formatTime(System.currentTimeMillis() - timeExecutionStart));
+		}
 
-    private void appendVertex(AbstractVertex vertex, String md5, final int vertexId) {
-      vertexMD5.append(vertexId);
-      vertexMD5.append("|");
-      vertexMD5.append(md5);
-      vertexMD5.append('\n');
+		private void appendVertex(AbstractVertex vertex, String md5, final int vertexId) {
+			vertexMD5.append(vertexId);
+			vertexMD5.append("|");
+			vertexMD5.append(md5);
+			vertexMD5.append('\n');
 
-      for (Map.Entry<String, String> annoEntry : vertex.getAnnotations().entrySet()) {
-        vertexAnnos.append(vertexId);
-        vertexAnnos.append('|');
-        appendEscaped(vertexAnnos, annoEntry.getKey(), maxVertexKeyLength);
-        vertexAnnos.append('|');
-        appendEscaped(vertexAnnos, annoEntry.getValue(), maxVertexValueLength);
-        vertexAnnos.append('\n');
-      }
+			for (Map.Entry<String, String> annoEntry : vertex.getAnnotations().entrySet()) {
+				vertexAnnos.append(vertexId);
+				vertexAnnos.append('|');
+				appendEscaped(vertexAnnos, annoEntry.getKey(), maxVertexKeyLength);
+				vertexAnnos.append('|');
+				appendEscaped(vertexAnnos, annoEntry.getValue(), maxVertexValueLength);
+				vertexAnnos.append('\n');
+			}
 
-      md5ToIdMap.put(md5, vertexId);
-    }
+			md5ToIdMap.put(md5, vertexId);
+		}
 
-    private void appendEdge(AbstractEdge edge, final long edgeId,
-                            final int srcVertexId, final int dstVertexId) {
-      edgeLinks.append(String.valueOf(edgeId));
-      edgeLinks.append('|');
-      edgeLinks.append(String.valueOf(srcVertexId));
-      edgeLinks.append('|');
-      edgeLinks.append(String.valueOf(dstVertexId));
-      edgeLinks.append('\n');
+		private void appendEdge(AbstractEdge edge, final long edgeId,
+				final int srcVertexId, final int dstVertexId) {
+			edgeLinks.append(String.valueOf(edgeId));
+			edgeLinks.append('|');
+			edgeLinks.append(String.valueOf(srcVertexId));
+			edgeLinks.append('|');
+			edgeLinks.append(String.valueOf(dstVertexId));
+			edgeLinks.append('\n');
 
-      for (Map.Entry<String, String> annoEntry : edge.getAnnotations().entrySet()) {
-        edgeAnnos.append(edgeId);
-        edgeAnnos.append('|');
-        appendEscaped(edgeAnnos, annoEntry.getKey(), maxEdgeKeyLength);
-        edgeAnnos.append('|');
-        appendEscaped(edgeAnnos, annoEntry.getValue(), maxEdgeValueLength);
-        edgeAnnos.append('\n');
-      }
-    }
+			for (Map.Entry<String, String> annoEntry : edge.getAnnotations().entrySet()) {
+				edgeAnnos.append(edgeId);
+				edgeAnnos.append('|');
+				appendEscaped(edgeAnnos, annoEntry.getKey(), maxEdgeKeyLength);
+				edgeAnnos.append('|');
+				appendEscaped(edgeAnnos, annoEntry.getValue(), maxEdgeValueLength);
+				edgeAnnos.append('\n');
+			}
+		}
 
-    private void appendEscaped(StringBuilder sb, String str, final int maxLength) {
-      for (int i = 0; i < Math.min(str.length(), maxLength); ++i) {
-        char c = str.charAt(i);
-        switch (c) {
-          case '\\':
-            sb.append("\\\\");
-            break;
-          case '|':
-            sb.append("\\|");
-            break;
-          default:
-            sb.append(c);
-        }
-      }
-    }
+		private void appendEscaped(StringBuilder sb, String str, final int maxLength) {
+			for (int i = 0; i < Math.min(str.length(), maxLength); ++i) {
+				char c = str.charAt(i);
+				switch (c) {
+				case '\\':
+					sb.append("\\\\");
+					break;
+				case '|':
+					sb.append("\\|");
+					break;
+				default:
+					sb.append(c);
+				}
+			}
+		}
 
-    private String formatTime(final long milliseconds) {
-      long time = milliseconds / 1000;
-      StringBuilder sb = new StringBuilder();
-      int[] divs = new int[] {
-          86400, 3600, 60, 1
-      };
-      String[] units = new String[] {
-          "d", "h", "m", "s"
-      };
-      for (int i = 0; i < divs.length; ++i) {
-        if (time >= divs[i]) {
-          sb.append(time / divs[i]);
-          sb.append(units[i]);
-          time %= divs[i];
-        }
-      }
-      if (sb.length() == 0) {
-        sb.append("" + (milliseconds % 1000) + "ms");
-      }
-      return sb.toString();
-    }
-  }
-
-  private Logger logger = Logger.getLogger(Quickstep.class.getName());
-  private GraphBatch batch = new GraphBatch();
-  private QuickstepExecutor qs;
-  private CopyManager copyManager = new CopyManager();
-  private Timer forceSubmitTimer;
-
-  @Override
-  public boolean initialize(String arguments) {
-    String configFile = Settings.getDefaultConfigFilePath(this.getClass());
-    conf = new QuickstepConfiguration(configFile, arguments);
-
-    // Initialize log file writer.
-    String debugLogFilePath = conf.getDebugLogFilePath();
-    if (debugLogFilePath != null) {
-      try {
-        debugLogWriter = new PrintWriter(new File(debugLogFilePath));
-      } catch (FileNotFoundException e) {
-        logger.log(Level.WARNING, "Failed creating Quickstep log file at " + debugLogFilePath);
-        debugLogWriter = null;
-      }
-    }
-
-    Result<ExternalMapArgument> mapArgumentParseResult = ExternalMapManager.parseArgumentFromFile(md5MapId, configFile);
-    if(mapArgumentParseResult.error){
-	logger.log(Level.SEVERE, "Failed to parse argument for external map: '" + md5MapId + "'");
-	logger.log(Level.SEVERE, mapArgumentParseResult.toErrorString());
-	return false;
-    }else{
-	ExternalMapArgument mapArgument = mapArgumentParseResult.result;
-	Result<ExternalMap<String, Integer>> mapCreateResult = ExternalMapManager.create(mapArgument);
-	if(mapCreateResult.error){
-		logger.log(Level.SEVERE, "Failed to create external map '"+md5MapId+"' from arguments: " + mapArgument);
-		logger.log(Level.SEVERE, mapCreateResult.toErrorString());
-		return false;
-	}else{
-		logger.log(Level.INFO, md5MapId + ": " + mapArgument);
-		md5ToIdMap = mapCreateResult.result;
+		private String formatTime(final long milliseconds) {
+			long time = milliseconds / 1000;
+			StringBuilder sb = new StringBuilder();
+			int[] divs = new int[] {
+					86400, 3600, 60, 1
+			};
+			String[] units = new String[] {
+					"d", "h", "m", "s"
+			};
+			for (int i = 0; i < divs.length; ++i) {
+				if (time >= divs[i]) {
+					sb.append(time / divs[i]);
+					sb.append(units[i]);
+					time %= divs[i];
+				}
+			}
+			if (sb.length() == 0) {
+				sb.append("" + (milliseconds % 1000) + "ms");
+			}
+			return sb.toString();
+		}
 	}
-    }
 
-    // Initialize Quickstep async executor.
-    QuickstepClient client = new QuickstepClient(conf.getServerIP(), conf.getServerPort());
-    qs = new QuickstepExecutor(client);
-    qs.setLogger(logger);
-    qs.setNumRetriesOnFailure(3);
-    if (debugLogWriter != null) {
-      qs.setPriortizedLogger((String msg) -> {
-        debugLogWriter.println(msg);
-        debugLogWriter.flush();
-      });
-    }
+	private Logger logger = Logger.getLogger(Quickstep.class.getName());
+	private GraphBatch batch = new GraphBatch();
+	private QuickstepExecutor qs;
+	private CopyManager copyManager = new CopyManager();
+	private Timer forceSubmitTimer;
 
-    // Initialize copy manager.
-    copyManager.initialize();
+	@Override
+	public boolean initialize(String arguments) {
+		String configFile = Settings.getDefaultConfigFilePath(this.getClass());
+		conf = new QuickstepConfiguration(configFile, arguments);
 
-    // Reset Quickstep storage if required.
-    if (conf.getReset()) {
-      copyManager.resetStorage();
-    } else {
-      copyManager.resetStorageIfInvalid();
-    }
+		// Initialize log file writer.
+		String debugLogFilePath = conf.getDebugLogFilePath();
+		if (debugLogFilePath != null) {
+			try {
+				debugLogWriter = new PrintWriter(new File(debugLogFilePath));
+			} catch (FileNotFoundException e) {
+				logger.log(Level.WARNING, "Failed creating Quickstep log file at " + debugLogFilePath);
+				debugLogWriter = null;
+			}
+		}
 
-    // Print all configurations for ease of debugging.
-    qs.logInfo(conf.dump());
+		Result<ExternalMapArgument> mapArgumentParseResult = ExternalMapManager.parseArgumentFromFile(md5MapId, configFile);
+		if(mapArgumentParseResult.error){
+			logger.log(Level.SEVERE, "Failed to parse argument for external map: '" + md5MapId + "'");
+			logger.log(Level.SEVERE, mapArgumentParseResult.toErrorString());
+			return false;
+		}else{
+			ExternalMapArgument mapArgument = mapArgumentParseResult.result;
+			Result<ExternalMap<String, Integer>> mapCreateResult = ExternalMapManager.create(mapArgument);
+			if(mapCreateResult.error){
+				logger.log(Level.SEVERE, "Failed to create external map '"+md5MapId+"' from arguments: " + mapArgument);
+				logger.log(Level.SEVERE, mapCreateResult.toErrorString());
+				return false;
+			}else{
+				logger.log(Level.INFO, md5MapId + ": " + mapArgument);
+				md5ToIdMap = mapCreateResult.result;
+			}
+		}
 
-    timeExecutionStart = System.currentTimeMillis();
-    resetForceSubmitTimer();
+		// Initialize Quickstep async executor.
+		QuickstepClient client = new QuickstepClient(conf.getServerIP(), conf.getServerPort());
+		qs = new QuickstepExecutor(client);
+		qs.setLogger(logger);
+		qs.setNumRetriesOnFailure(3);
+		if (debugLogWriter != null) {
+			qs.setPriortizedLogger((String msg) -> {
+				debugLogWriter.println(msg);
+				debugLogWriter.flush();
+			});
+		}
 
-    return true;
-  }
+		// Initialize copy manager.
+		copyManager.initialize(this);
 
-  @Override
-  public boolean shutdown() {
-    if (!batch.isEmpty()) {
-      copyManager.submitBatch(batch);
-      copyManager.finalizeBatch();
-    }
-    copyManager.shutdown();
-    if(md5ToIdMap != null){
-      md5ToIdMap.close();
-      md5ToIdMap = null;
-    }
-    qs.shutdown();
-    if (debugLogWriter != null) {
-      debugLogWriter.close();
-      debugLogWriter = null;
-    }
-    return true;
-  }
+		// Reset Quickstep storage if required.
+		if (conf.getReset()) {
+			copyManager.resetStorage();
+		} else {
+			copyManager.resetStorageIfInvalid();
+		}
 
-  @Override
-  public AbstractEdge getEdge(String childVertexHash, String parentVertexHash) {
-    logger.log(Level.SEVERE, "Not supported");
-    return null;
-  }
+		// Print all configurations for ease of debugging.
+		qs.logInfo(conf.dump());
 
-  @Override
-  public AbstractVertex getVertex(String vertexHash) {
-    logger.log(Level.SEVERE, "Not supported");
-    return null;
-  }
+		timeExecutionStart = System.currentTimeMillis();
+		resetForceSubmitTimer();
 
-  @Override
-  public Graph getChildren(String parentHash) {
-    logger.log(Level.SEVERE, "Not supported");
-    return null;
-  }
+		return true;
+	}
 
-  @Override
-  public Graph getParents(String childVertexHash) {
-    logger.log(Level.SEVERE, "Not supported");
-    return null;
-  }
+	@Override
+	public boolean shutdown() {
+		if (!batch.isEmpty()) {
+			copyManager.submitBatch(batch);
+			copyManager.finalizeBatch();
+		}
+		copyManager.shutdown();
+		if(md5ToIdMap != null){
+			md5ToIdMap.close();
+			md5ToIdMap = null;
+		}
+		qs.shutdown();
+		if (debugLogWriter != null) {
+			debugLogWriter.close();
+			debugLogWriter = null;
+		}
+		return true;
+	}
 
-  @Override
-  public boolean putEdge(AbstractEdge incomingEdge) {
-    synchronized (batch) {
-      batch.addEdge(incomingEdge);
-      if (batch.getEdges().size() >= conf.getBatchSize()) {
-        copyManager.submitBatch(batch);
-        resetForceSubmitTimer();
-      }
-    }
-    return true;
-  }
+	@Override
+	public AbstractEdge getEdge(String childVertexHash, String parentVertexHash) {
+		logger.log(Level.SEVERE, "Not supported");
+		return null;
+	}
 
-  @Override
-  public boolean putVertex(AbstractVertex incomingVertex) {
-    synchronized (batch) {
-      batch.addVertex(incomingVertex);
-    }
-    return true;
-  }
+	@Override
+	public AbstractVertex getVertex(String vertexHash) {
+		logger.log(Level.SEVERE, "Not supported");
+		return null;
+	}
 
-  @Override
-  public Object executeQuery(String query) {
-    Object result = null;
-    try {
-      result = qs.executeQuery(query);
-    } catch (QuickstepFailure e) {
-      logger.log(Level.SEVERE, "Query execution failed", e);
-    }
-    return result;
-  }
+	@Override
+	public Graph getChildren(String parentHash) {
+		logger.log(Level.SEVERE, "Not supported");
+		return null;
+	}
 
-  public QuickstepExecutor getExecutor() {
-    return qs;
-  }
+	@Override
+	public Graph getParents(String childVertexHash) {
+		logger.log(Level.SEVERE, "Not supported");
+		return null;
+	}
 
-  private void resetForceSubmitTimer() {
-    if (forceSubmitTimer != null) {
-      forceSubmitTimer.cancel();
-    }
-    forceSubmitTimer = new Timer();
-    forceSubmitTimer.schedule(new TimerTask() {
-      @Override
-      public void run() {
-        synchronized (batch) {
-          if (!batch.isEmpty()) {
-            copyManager.submitBatch(batch);
-          }
-          resetForceSubmitTimer();
-        }
-      }
-    }, conf.getForceSubmitTimeInterval() * 1000);
-  }
+	@Override
+	public boolean putEdge(AbstractEdge incomingEdge) {
+		synchronized (batch) {
+			batch.addEdge(incomingEdge);
+			if (batch.getEdges().size() >= conf.getBatchSize()) {
+				copyManager.submitBatch(batch);
+				resetForceSubmitTimer();
+			}
+		}
+		return true;
+	}
+
+	@Override
+	public boolean putVertex(AbstractVertex incomingVertex) {
+		synchronized (batch) {
+			batch.addVertex(incomingVertex);
+		}
+		return true;
+	}
+
+	@Override
+	public Object executeQuery(String query) {
+		Object result = null;
+		try {
+			result = qs.executeQuery(query);
+		} catch (QuickstepFailure e) {
+			logger.log(Level.SEVERE, "Query execution failed", e);
+		}
+		return result;
+	}
+	
+	public long executeQueryForLongResult(String query){
+		return qs.executeQueryForLongResult(query);
+	}
+
+	private void resetForceSubmitTimer() {
+		if (forceSubmitTimer != null) {
+			forceSubmitTimer.cancel();
+		}
+		forceSubmitTimer = new Timer();
+		forceSubmitTimer.schedule(new TimerTask() {
+			@Override
+			public void run() {
+				synchronized (batch) {
+					if (!batch.isEmpty()) {
+						copyManager.submitBatch(batch);
+					}
+					resetForceSubmitTimer();
+				}
+			}
+		}, conf.getForceSubmitTimeInterval() * 1000);
+	}
+	
+	private QuickGrailExecutor
+		<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep> 
+		executor = null;
+
+	@SuppressWarnings("unchecked")
+	public synchronized
+		QuickGrailExecutor<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep> 
+		getExecutor() throws Exception{
+		if(executor == null){
+			executor = new QuickGrailExecutor
+					<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>
+					(this, new QuickstepResolver(), new QuickstepEnvironment(this));
+		}
+		return executor;
+	}
 }
 

@@ -19,50 +19,36 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractLimitGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
 import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
-import spade.storage.quickstep.QuickstepExecutor;
-
-import java.util.ArrayList;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
+import spade.storage.Quickstep;
 
 /**
  * Sample a subset of vertices / edges from a graph.
  */
-public class LimitGraph extends Instruction
-{
-	// Output graph.
-	private QuickstepGraph targetGraph;
-	// Input graph.
-	private QuickstepGraph sourceGraph;
-	// The maximum number of vertices / edges to sample.
-	private int limit;
+public class LimitGraph
+	extends AbstractLimitGraph<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
 
-	public LimitGraph(QuickstepGraph targetGraph, QuickstepGraph sourceGraph, int limit)
-	{
-		this.targetGraph = targetGraph;
-		this.sourceGraph = sourceGraph;
-		this.limit = limit;
+	public LimitGraph(QuickstepGraph targetGraph, QuickstepGraph sourceGraph, int limit){
+		super(targetGraph, sourceGraph, limit);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		QuickstepExecutor qs = (QuickstepExecutor) ctx.getExecutor();
-
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
 		String sourceVertexTable = sourceGraph.getVertexTableName();
 		String sourceEdgeTable = sourceGraph.getEdgeTableName();
 
-		long numVertices = qs.executeQueryForLongResult(
+		long numVertices = storage.executeQueryForLongResult(
 				"COPY SELECT COUNT(*) FROM " + sourceVertexTable + " TO stdout;");
-		long numEdges = qs.executeQueryForLongResult(
+		long numEdges = storage.executeQueryForLongResult(
 				"COPY SELECT COUNT(*) FROM " + sourceEdgeTable + " TO stdout;");
 
 		if(numVertices > 0)
 		{
-			qs.executeQuery("\\analyzerange " + sourceVertexTable + "\n" +
+			storage.executeQuery("\\analyzerange " + sourceVertexTable + "\n" +
 					"INSERT INTO " + targetGraph.getVertexTableName() +
 					" SELECT id FROM " + sourceVertexTable + " GROUP BY id" +
 					" ORDER BY id LIMIT " + limit + ";");
@@ -70,33 +56,10 @@ public class LimitGraph extends Instruction
 		}
 		if(numEdges > 0)
 		{
-			qs.executeQuery("\\analyzerange " + sourceEdgeTable + "\n" +
+			storage.executeQuery("\\analyzerange " + sourceEdgeTable + "\n" +
 					"INSERT INTO " + targetGraph.getEdgeTableName() +
 					" SELECT id FROM " + sourceEdgeTable + " GROUP BY id" +
 					" ORDER BY id LIMIT " + limit + ";");
 		}
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "LimitGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("sourceGraph");
-		inline_field_values.add(sourceGraph.getName());
-		inline_field_names.add("limit");
-		inline_field_values.add(String.valueOf(limit));
 	}
 }

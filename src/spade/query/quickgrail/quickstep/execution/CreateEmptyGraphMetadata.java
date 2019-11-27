@@ -19,50 +19,26 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractCreateEmptyGraphMetadata;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
+import spade.query.quickgrail.quickstep.core.QuickstepUtil;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
 import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
-import spade.query.quickgrail.quickstep.utility.QuickstepUtil;
-import spade.storage.quickstep.QuickstepExecutor;
-
-import java.util.ArrayList;
+import spade.storage.Quickstep;
 
 /**
  * This class is not yet used in the SPADE integrated QuickGrail.
  */
-public class CreateEmptyGraphMetadata extends Instruction
-{
-	private QuickstepGraphMetadata metadata;
+public class CreateEmptyGraphMetadata
+	extends AbstractCreateEmptyGraphMetadata<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
 
-	public CreateEmptyGraphMetadata(QuickstepGraphMetadata metadata)
-	{
-		this.metadata = metadata;
+	public CreateEmptyGraphMetadata(QuickstepGraphMetadata metadata){
+		super(metadata);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		QuickstepUtil.CreateEmptyGraphMetadata((QuickstepExecutor) ctx.getExecutor(), metadata);
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "CreateEmptyGraphMetadata";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("metadata");
-		inline_field_values.add(metadata.getName());
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
+		QuickstepUtil.CreateEmptyGraphMetadata(storage, metadata);
 	}
 }

@@ -19,44 +19,29 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
+import static spade.query.quickgrail.postgresql.core.CommonVariables.PRIMARY_KEY;
+
 import spade.query.quickgrail.core.entities.Graph.GraphComponent;
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractSubtractGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
 import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.storage.postgresql.PostgresExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PRIMARY_KEY;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
 
 /**
  * Subtract one graph from the other.
  */
-public class SubtractGraph extends Instruction
-{
-	// Output graph.
-	private PostgreSQLGraph outputGraph;
-	// Minuend graph.
-	private PostgreSQLGraph minuendGraph;
-	// Subtrahend graph.
-	private PostgreSQLGraph subtrahendGraph;
-	// Graph components that should be involved in the operation (vertices / edges, or both).
-	private GraphComponent component;
-
+public class SubtractGraph
+	extends AbstractSubtractGraph<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
+	
 	public SubtractGraph(PostgreSQLGraph outputGraph, PostgreSQLGraph minuendGraph,
-						 PostgreSQLGraph subtrahendGraph, GraphComponent component)
-	{
-		this.outputGraph = outputGraph;
-		this.minuendGraph = minuendGraph;
-		this.subtrahendGraph = subtrahendGraph;
-		this.component = component;
+						 PostgreSQLGraph subtrahendGraph, GraphComponent component){
+		super(outputGraph, minuendGraph, subtrahendGraph, component);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
 		String outputVertexTable = outputGraph.getVertexTableName();
 		String outputEdgeTable = outputGraph.getEdgeTableName();
 		String minuendVertexTable = minuendGraph.getVertexTableName();
@@ -64,45 +49,19 @@ public class SubtractGraph extends Instruction
 		String subtrahendVertexTable = subtrahendGraph.getVertexTableName();
 		String subtrahendEdgeTable = subtrahendGraph.getEdgeTableName();
 
-		PostgresExecutor qs = (PostgresExecutor) ctx.getExecutor();
 		if(component == null || component == GraphComponent.kVertex)
 		{
-			qs.executeQuery("INSERT INTO " + outputVertexTable +
+			storage.executeQuery("INSERT INTO " + outputVertexTable +
 					" SELECT " + PRIMARY_KEY + " FROM " + minuendVertexTable +
 					" WHERE " + PRIMARY_KEY + " NOT IN (SELECT " + PRIMARY_KEY +
 					" FROM " + subtrahendVertexTable + ");");
 		}
 		if(component == null || component == GraphComponent.kEdge)
 		{
-			qs.executeQuery("INSERT INTO " + outputEdgeTable +
+			storage.executeQuery("INSERT INTO " + outputEdgeTable +
 					" SELECT " + PRIMARY_KEY + " FROM " + minuendEdgeTable +
 					" WHERE " + PRIMARY_KEY + " NOT IN (SELECT " + PRIMARY_KEY +
 					" FROM " + subtrahendEdgeTable + ");");
-		}
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "SubtractGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(ArrayList<String> inline_field_names, ArrayList<String> inline_field_values,
-									   ArrayList<String> non_container_child_field_names, ArrayList<TreeStringSerializable> non_container_child_fields,
-									   ArrayList<String> container_child_field_names,
-									   ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("outputGraph");
-		inline_field_values.add(outputGraph.getName());
-		inline_field_names.add("minuendGraph");
-		inline_field_values.add(minuendGraph.getName());
-		inline_field_names.add("subtrahendGraph");
-		inline_field_values.add(subtrahendGraph.getName());
-		if(this.component != null)
-		{
-			inline_field_names.add("component");
-			inline_field_values.add(component.name());
 		}
 	}
 }

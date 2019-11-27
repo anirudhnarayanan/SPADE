@@ -19,63 +19,78 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
-import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.storage.postgresql.PostgresExecutor;
-
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.CHILD_VERTEX_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.EDGE_TABLE;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PARENT_VERTEX_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PRIMARY_KEY;
+import spade.query.quickgrail.core.execution.AbstractCollapseEdge;
+import spade.query.quickgrail.core.kernel.ExecutionContext;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
+import spade.storage.PostgreSQLSchema;
 
 /**
  * Collapse all edges whose specified fields are the same.
  */
-public class CollapseEdge extends Instruction
-{
-	// Input graph.
-	private PostgreSQLGraph targetGraph;
-	// Output graph.
-	private PostgreSQLGraph sourceGraph;
-	// Fields to check.
-	private ArrayList<String> fields;
-
-	public CollapseEdge(PostgreSQLGraph targetGraph, PostgreSQLGraph sourceGraph, ArrayList<String> fields)
-	{
-		this.targetGraph = targetGraph;
-		this.sourceGraph = sourceGraph;
-		this.fields = fields;
+public class CollapseEdge
+	extends AbstractCollapseEdge<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
+	
+	public CollapseEdge(PostgreSQLGraph targetGraph, PostgreSQLGraph sourceGraph, ArrayList<String> fields){
+		super(targetGraph, sourceGraph, fields);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		String sourceVertexTable = sourceGraph.getVertexTableName();
-		String sourceEdgeTable = sourceGraph.getEdgeTableName();
-		String targetVertexTable = targetGraph.getVertexTableName();
-		String targetEdgeTable = targetGraph.getEdgeTableName();
-
-		PostgresExecutor qs = (PostgresExecutor) ctx.getExecutor();
-		qs.executeQuery("INSERT INTO " + targetVertexTable +
-				" SELECT " + PRIMARY_KEY + " FROM " + sourceVertexTable + ";");
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
+		PostgreSQLSchema schema = storage.getSchema();
+		
+		List<String> edgeTableColumnNames = schema.getEdgeTableColumnNames();
+		Set<String> missingColumns = new HashSet<String>();
+		for(String field : getFields()){
+			if(!edgeTableColumnNames.contains(field)){
+				missingColumns.add(field);
+			}
+		}
+		if(!missingColumns.isEmpty()){
+			throw new RuntimeException("Cannot collapse edges because of not-present fields: " + missingColumns);
+		}
+		
+		final String tableNameMainEdge = 
+				schema.formatTableNameForQuery(schema.mainEdgeTableName);
+		
+		final String tableNameTargetVertex = 
+				schema.formatTableNameForQuery(targetGraph.getVertexTableName());
+		final String tableNameTargetEdge = 
+				schema.formatTableNameForQuery(targetGraph.getEdgeTableName());
+		final String tableNameSourceVertex = 
+				schema.formatTableNameForQuery(sourceGraph.getVertexTableName());
+		final String tableNameSourceEdge = 
+				schema.formatTableNameForQuery(sourceGraph.getEdgeTableName());
+		
+		final String columnNameHash = 
+				schema.formatColumnNameForQuery(schema.hashColumnName);
+		final String columnNameChildHash = 
+				schema.formatColumnNameForQuery(schema.childVertexHashColumnName);
+		final String columnNameParentHash = 
+				schema.formatColumnNameForQuery(schema.parentVertexHashColumnName);
+		
+		storage.executeQuery("INSERT INTO " + tableNameTargetVertex +
+				" SELECT " + columnNameHash + " FROM " + tableNameSourceVertex + ";");
 
 		StringBuilder groups = new StringBuilder();
 
-		for(int i = 0; i < fields.size(); ++i)
-		{
-			groups.append(", \"" + fields.get(i) + "\"");
+		ArrayList<String> fields = getFields();
+		for(int i = 0; i < fields.size(); ++i){
+			groups.append(", " + schema.formatColumnNameForQuery(fields.get(i)));
 		}
 
-
-		qs.executeQuery("INSERT INTO " + targetEdgeTable +
-				" SELECT MIN(e." + PRIMARY_KEY + ") FROM " + EDGE_TABLE + " e" +
-				" WHERE e." + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " + sourceEdgeTable + ")" +
-				" GROUP BY \"" + CHILD_VERTEX_KEY + "\", \"" + PARENT_VERTEX_KEY + "\"" + groups.toString() + ";");
+		storage.executeQuery(
+				"INSERT INTO " + tableNameTargetEdge +
+				" SELECT MIN(e." + columnNameHash + ") FROM " + tableNameMainEdge + " e" +
+				" WHERE e." + columnNameHash + " IN (SELECT " + columnNameHash + " FROM " + tableNameSourceEdge + ")" +
+				" GROUP BY " + columnNameChildHash + ", " + columnNameParentHash + "" + groups.toString() + ";");
 	}
 
 	// quickstep
@@ -90,25 +105,4 @@ public class CollapseEdge extends Instruction
 	// SELECT MIN(e.hash) FROM edge e
 	// WHERE e.id IN (SELECT id FROM sourceEdgeTable)
 	// GROUP BY src, dst, field1, field2
-
-	@Override
-	public String getLabel()
-	{
-		return "CollapseEdge";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("sourceGraph");
-		inline_field_values.add(sourceGraph.getName());
-	}
 }

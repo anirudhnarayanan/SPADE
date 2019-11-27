@@ -19,12 +19,20 @@
  */
 package spade.query.quickgrail.core.kernel;
 
+import spade.core.AbstractStorage;
+import spade.query.quickgrail.core.entities.Graph;
+import spade.query.quickgrail.core.entities.GraphMetadata;
 import spade.query.quickgrail.core.utility.TreeStringSerializable;
 
 /**
  * Interface for a QuickGrail primitive instruction.
  */
-public abstract class Instruction extends TreeStringSerializable
-{
-	public abstract void execute(AbstractEnvironment env, ExecutionContext ctx);
+public abstract class Instruction
+	<
+	G extends Graph, GM extends GraphMetadata,
+	E extends AbstractEnvironment<G, GM, S>, S extends AbstractStorage
+	> 
+	extends TreeStringSerializable{
+	
+	public abstract void execute(E environment, ExecutionContext executionContext, S storage);
 }

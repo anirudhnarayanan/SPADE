@@ -19,174 +19,174 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractGetLink;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
 import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.storage.postgresql.PostgresExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.CHILD_VERTEX_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.EDGE_TABLE;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PARENT_VERTEX_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PRIMARY_KEY;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
+import spade.storage.PostgreSQLSchema;
 
 /**
  * Similar to GetPath but treats the graph edges as indirected.
  */
-public class GetLink extends Instruction
-{
-	// Output graph.
-	private PostgreSQLGraph targetGraph;
-	// Input graph.
-	private PostgreSQLGraph subjectGraph;
-	// Set of source vertices.
-	private PostgreSQLGraph sourceGraph;
-	// Set of destination vertices.
-	private PostgreSQLGraph destinationGraph;
-	// Max path length.
-	private Integer maxDepth;
-
+public class GetLink
+	extends AbstractGetLink<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
+	
 	public GetLink(PostgreSQLGraph targetGraph, PostgreSQLGraph subjectGraph,
 				   PostgreSQLGraph srcGraph, PostgreSQLGraph dstGraph,
-				   Integer maxDepth)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.sourceGraph = srcGraph;
-		this.destinationGraph = dstGraph;
-		this.maxDepth = maxDepth;
+				   Integer maxDepth){
+		super(targetGraph, subjectGraph, srcGraph, dstGraph, maxDepth);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		PostgresExecutor qs = (PostgresExecutor) ctx.getExecutor();
-
-		qs.executeQuery("DROP TABLE IF EXISTS m_cur;" +
-				"DROP TABLE IF EXISTS m_next;" +
-				"DROP TABLE IF EXISTS m_answer;" +
-				"CREATE TABLE m_cur (" + PRIMARY_KEY + " UUID);" +
-				"CREATE TABLE m_next (" + PRIMARY_KEY + " UUID);" +
-				"CREATE TABLE m_answer (" + PRIMARY_KEY + " UUID);");
-
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
+		PostgreSQLSchema schema = storage.getSchema();
+		final String cursorTable = "m_cur";
+		final String nextTable = "m_next";
+		final String answerTable = "m_answer";
+		
+		final String mainEdgeTableFormatted = schema.formatTableNameForQuery(schema.mainEdgeTableName);
+		final String hashColumnFormatted = schema.formatColumnNameForQuery(schema.hashColumnName);
+		final String subjectEdgeTableFormatted = schema.formatTableNameForQuery(subjectGraph.getEdgeTableName());
+		final String childHashFormatted = schema.formatColumnNameForQuery(schema.childVertexHashColumnName);
+		final String parentHashFormatted = schema.formatColumnNameForQuery(schema.parentVertexHashColumnName);
+		
+		storage.executeQuery(
+				schema.queriesDropAndCreateHashOnlyTable(cursorTable) +
+				schema.queriesDropAndCreateHashOnlyTable(nextTable) +
+				schema.queriesDropAndCreateHashOnlyTable(answerTable)
+				);
+		
 		String filter;
-		if(env.IsBaseGraph(subjectGraph))
-		{
+		if(env.IsBaseGraph(subjectGraph)){
 			filter = "";
-		}
-		else
-		{
-			filter = " AND " + EDGE_TABLE + "." + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " +
-					subjectGraph.getEdgeTableName() + ")";
+		}else{
+			filter = " and " + mainEdgeTableFormatted + "." + hashColumnFormatted + " in (select " + 
+					hashColumnFormatted + " from " + subjectEdgeTableFormatted + ")";
 		}
 
+		final String subgraphRefTable = "m_sgconn";
+		final String subgraphRefTableFormatted = schema.formatTableNameForQuery(subgraphRefTable);
+		final String depthName = "depth";
+		final String depthNameFormatted = schema.formatColumnNameForQuery(depthName);
+		
+		final String cursorTableFormatted = schema.formatTableNameForQuery(cursorTable);
+		final String answerTableFormatted = schema.formatTableNameForQuery(answerTable);
+		final String nextTableFormatted = schema.formatTableNameForQuery(nextTable);
+		
 		// Create subgraph edges table.
-		qs.executeQuery("DROP TABLE IF EXISTS m_sgconn;" +
-				"CREATE TABLE m_sgconn ( \"" + CHILD_VERTEX_KEY + "\" UUID, \"" + PARENT_VERTEX_KEY + "\" UUID, depth INT);");
+		storage.executeQuery("drop table if exists " + subgraphRefTableFormatted + ";" +
+				" create table " + subgraphRefTableFormatted + "(" + childHashFormatted + " uuid, " +
+				parentHashFormatted + " uuid, "+depthNameFormatted+" int);");
 
-		qs.executeQuery("INSERT INTO m_cur SELECT " + PRIMARY_KEY + " FROM " + destinationGraph.getVertexTableName() + ";" +
-				"INSERT INTO m_answer SELECT " + PRIMARY_KEY + " FROM m_cur;");
+		storage.executeQuery(
+				"insert into " + cursorTableFormatted + " select " + hashColumnFormatted + " from " + 
+				schema.formatTableNameForQuery(destinationGraph.getVertexTableName()) + ";" +
+				"insert into "+answerTableFormatted+" select " + hashColumnFormatted + " from " + cursorTableFormatted + ";");
 
-		String loopStmts =
-				"INSERT INTO m_sgconn SELECT \"" + CHILD_VERTEX_KEY + "\", \"" + PARENT_VERTEX_KEY + "\", $depth FROM " + EDGE_TABLE +
-						" WHERE \"" + PARENT_VERTEX_KEY + "\" IN (SELECT " + PRIMARY_KEY + " FROM m_cur)" + filter + ";" +
-						"INSERT INTO m_sgconn SELECT \"" + CHILD_VERTEX_KEY + "\", \"" + PARENT_VERTEX_KEY + "\", $depth FROM " + EDGE_TABLE +
-						" WHERE \"" + CHILD_VERTEX_KEY + "\" IN (SELECT " + PRIMARY_KEY + " FROM m_cur)" + filter + ";" +
-						"DROP TABLE IF EXISTS m_next;" + "CREATE TABLE m_next (" + PRIMARY_KEY + " UUID);" +
-						"INSERT INTO m_next SELECT \"" + CHILD_VERTEX_KEY + "\" FROM " + EDGE_TABLE +
-						" WHERE \"" + PARENT_VERTEX_KEY + "\" IN (SELECT " + PRIMARY_KEY + " FROM m_cur)" + filter + " GROUP BY \"" + CHILD_VERTEX_KEY + "\";" +
-						"INSERT INTO m_next SELECT \"" + PARENT_VERTEX_KEY + "\" FROM " + EDGE_TABLE +
-						" WHERE \"" + CHILD_VERTEX_KEY + "\" IN (SELECT " + PRIMARY_KEY + " FROM m_cur)" + filter + " GROUP BY \"" + PARENT_VERTEX_KEY + "\";" +
-						"DROP TABLE IF EXISTS m_cur;" + "CREATE TABLE m_cur (" + PRIMARY_KEY + " UUID);" +
-						"INSERT INTO m_cur SELECT " + PRIMARY_KEY + " FROM m_next WHERE " + PRIMARY_KEY + " NOT IN (SELECT " + PRIMARY_KEY + " FROM m_answer);" +
-						"INSERT INTO m_answer SELECT " + PRIMARY_KEY + " FROM m_cur;";
-		for(int i = 0; i < maxDepth; ++i)
-		{
-			qs.executeQuery(loopStmts.replace("$depth", String.valueOf(i + 1)));
-
-			String worksetSizeQuery = "COPY (SELECT COUNT(*) FROM m_cur) TO stdout;";
-			if(qs.executeQueryForLongResult(worksetSizeQuery) == 0)
-			{
+		final String depthStringReplacer = "<depth>";
+		
+		String loopStmts = 
+				"insert into " + subgraphRefTableFormatted + " select " + childHashFormatted + ", " +
+				parentHashFormatted + ", " + depthStringReplacer + " from " + mainEdgeTableFormatted +
+				" where " + parentHashFormatted + " in (select " + hashColumnFormatted + " from " + 
+				cursorTableFormatted + ") " + filter + ";";
+		loopStmts += 
+				"insert into " + subgraphRefTableFormatted + " select " + childHashFormatted + ", " + parentHashFormatted +
+				", " + depthStringReplacer + " from " + mainEdgeTableFormatted + " where " + childHashFormatted + " in " +
+				"(select " + hashColumnFormatted + " from " + cursorTableFormatted + ") " + filter + ";";
+		loopStmts += 
+				schema.queriesDropAndCreateHashOnlyTable(nextTable);
+		loopStmts += 
+				"insert into " + nextTableFormatted + " select " + childHashFormatted + " from " + mainEdgeTableFormatted +
+				" where " + parentHashFormatted + " in (select " + hashColumnFormatted + " from " + cursorTableFormatted +
+				") " + filter + " group by " + childHashFormatted + ";";
+		loopStmts += 
+				"insert into " + nextTableFormatted + " select " + parentHashFormatted + " from " + mainEdgeTableFormatted +
+				" where " + childHashFormatted + " in (select " + hashColumnFormatted + " from " + cursorTableFormatted +
+				") " + filter + " group by " + parentHashFormatted + ";";
+		loopStmts += 
+				schema.queriesDropAndCreateHashOnlyTable(cursorTable);
+		loopStmts += 
+				"insert into " + cursorTableFormatted + " select " + hashColumnFormatted + " from " + nextTableFormatted +
+				" where " + hashColumnFormatted + " not in (select " + hashColumnFormatted + " from " + answerTableFormatted +
+				");";
+		loopStmts += 
+				"insert into " + answerTableFormatted + " select " + hashColumnFormatted + " from " + cursorTableFormatted + ";";
+		
+		for(int i = 0; i < maxDepth; ++i){
+			String resolvedLoopStmts = loopStmts.replace(depthStringReplacer, String.valueOf((i + 1)));
+			storage.executeQuery(resolvedLoopStmts);
+			long size = storage.getRowCountOfTableSafe(cursorTable);
+			if(size <= 0){
 				break;
 			}
 		}
 
-		qs.executeQuery("DROP TABLE IF EXISTS m_cur;" +
-				"DROP TABLE IF EXISTS m_next;" +
-				"CREATE TABLE m_cur (" + PRIMARY_KEY + " UUID);" +
-				"CREATE TABLE m_next (" + PRIMARY_KEY + " UUID);");
+		storage.executeQuery(
+				schema.queriesDropAndCreateHashOnlyTable(cursorTable) +
+				schema.queriesDropAndCreateHashOnlyTable(nextTable));
 
-		qs.executeQuery("INSERT INTO m_cur SELECT " + PRIMARY_KEY + " FROM " + sourceGraph.getVertexTableName() +
-				" WHERE + " + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM m_answer);");
+		storage.executeQuery(
+				"insert into "+cursorTableFormatted+" select " + hashColumnFormatted + " from " + 
+				schema.formatTableNameForQuery(sourceGraph.getVertexTableName()) +
+				" where + " + hashColumnFormatted + " in (select " + hashColumnFormatted + " from " +
+				answerTableFormatted + ");");
 
-		qs.executeQuery("DROP TABLE IF EXISTS m_answer;" +
-				"CREATE TABLE m_answer (" + PRIMARY_KEY + " UUID);" +
-				"INSERT INTO m_answer SELECT " + PRIMARY_KEY + " FROM m_cur;");
+		storage.executeQuery(
+				schema.queriesDropAndCreateHashOnlyTable(answerTable) +
+				"insert into "+answerTableFormatted+" select " + hashColumnFormatted + " from "+cursorTableFormatted+";");
 
-		loopStmts =
-				"DROP TABLE IF EXISTS m_next;" + "CREATE TABLE m_next (" + PRIMARY_KEY + " UUID);" +
-						"INSERT INTO m_next SELECT \"" + PARENT_VERTEX_KEY + "\" FROM m_sgconn" +
-						" WHERE \"" + CHILD_VERTEX_KEY + "\" IN (SELECT + " + PRIMARY_KEY + " FROM m_cur)" +
-						" AND depth + $depth <= " + maxDepth + " GROUP BY \"" + PARENT_VERTEX_KEY + "\";" +
-						"INSERT INTO m_next SELECT \"" + CHILD_VERTEX_KEY + "\" FROM m_sgconn" +
-						" WHERE \"" + PARENT_VERTEX_KEY + "\" IN (SELECT + " + PRIMARY_KEY + " FROM m_cur)" +
-						" AND depth + $depth <= " + maxDepth + " GROUP BY \"" + CHILD_VERTEX_KEY + "\";" +
-						"DROP TABLE IF EXISTS m_cur;" + "CREATE TABLE m_cur (" + PRIMARY_KEY + " UUID);" +
-						"INSERT INTO m_cur SELECT " + PRIMARY_KEY + " FROM m_next WHERE " + PRIMARY_KEY + " " +
-						"NOT IN (SELECT " + PRIMARY_KEY + " FROM m_answer);" +
-						"INSERT INTO m_answer SELECT " + PRIMARY_KEY + " FROM m_cur;";
-		for(int i = 0; i < maxDepth; ++i)
-		{
-			qs.executeQuery(loopStmts.replace("$depth", String.valueOf(i)));
-
-			String worksetSizeQuery = "COPY (SELECT COUNT(*) FROM m_cur) TO stdout;";
-			if(qs.executeQueryForLongResult(worksetSizeQuery) == 0)
-			{
+		// TODO not fully tested
+		String secondLoopStmts =
+				schema.queriesDropAndCreateHashOnlyTable(nextTable) +
+				"insert into " + nextTableFormatted + " select " + parentHashFormatted + " from " + subgraphRefTableFormatted +
+				" where " + childHashFormatted + " in (select " + hashColumnFormatted + " from " + cursorTableFormatted + ")" +
+				" and "+depthNameFormatted + " + " + depthStringReplacer + " <= " + maxDepth + " group by " +
+				parentHashFormatted + ";";
+		secondLoopStmts +=
+				"insert into " + nextTableFormatted + " select " + childHashFormatted + " from " + subgraphRefTableFormatted +
+				" where " + parentHashFormatted + " in (select " + hashColumnFormatted + " from " + cursorTableFormatted + ")" +
+				" and " + depthNameFormatted + " + " + depthStringReplacer + " <= " + maxDepth + " group by " +
+				childHashFormatted + ";";
+		secondLoopStmts +=
+				schema.queriesDropAndCreateHashOnlyTable(cursorTable);
+		secondLoopStmts +=
+				"insert into " + cursorTableFormatted + " select " + hashColumnFormatted + " from " + nextTableFormatted +
+				" where " + hashColumnFormatted + " not in (select " + hashColumnFormatted + " from " + answerTableFormatted +
+				");";
+		secondLoopStmts +=
+				"insert into " + answerTableFormatted + " select " + hashColumnFormatted + " from " + cursorTableFormatted + ";";
+		
+		for(int i = 0; i < maxDepth; ++i){
+			String resolvedSecondLoopStmts = secondLoopStmts.replace(depthStringReplacer, String.valueOf(i));
+			storage.executeQuery(resolvedSecondLoopStmts);
+			long size = storage.getRowCountOfTableSafe(cursorTable);
+			if(size <= 0){
 				break;
 			}
 		}
 
-		String targetVertexTable = targetGraph.getVertexTableName();
-		String targetEdgeTable = targetGraph.getEdgeTableName();
+		final String targetVertexTable = targetGraph.getVertexTableName();
+		final String targetEdgeTable = targetGraph.getEdgeTableName();
+		
+		final String targetVertexTableFormatted = schema.formatTableNameForQuery(targetVertexTable);
+		final String targetEdgeTableFormatted = schema.formatTableNameForQuery(targetEdgeTable);
 
-		qs.executeQuery("INSERT INTO " + targetVertexTable + " SELECT " + PRIMARY_KEY + " FROM m_answer;" +
-				"INSERT INTO " + targetEdgeTable + " SELECT " + PRIMARY_KEY + " FROM " + EDGE_TABLE +
-				" WHERE \"" + CHILD_VERTEX_KEY + "\" IN (SELECT " + PRIMARY_KEY + " FROM m_answer)" +
-				" AND \"" + PARENT_VERTEX_KEY + "\" IN (SELECT + " + PRIMARY_KEY + " FROM m_answer)" + filter + ";");
+		storage.executeQuery(
+				"insert into " + targetVertexTableFormatted + " select " + hashColumnFormatted + " from " +
+				answerTableFormatted + ";" +
+				"insert into " + targetEdgeTableFormatted + " select " + hashColumnFormatted + " from " + 
+				mainEdgeTableFormatted + " where " + childHashFormatted + " in (select " + hashColumnFormatted +
+				" from " + answerTableFormatted + ") where " + childHashFormatted + " in (select " + hashColumnFormatted + 
+				" from " + answerTableFormatted + ") and " + parentHashFormatted + " in (select " + hashColumnFormatted +
+				" from " + answerTableFormatted + ") " + filter + ";");
 
-		qs.executeQuery("DROP TABLE IF EXISTS m_cur;" +
-				"DROP TABLE IF EXISTS m_next;" +
-				"DROP TABLE IF EXISTS m_answer;" +
-				"DROP TABLE IF EXISTS m_sgconn;");
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "GetLink";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("sourceGraph");
-		inline_field_values.add(sourceGraph.getName());
-		inline_field_names.add("destinationGraph");
-		inline_field_values.add(destinationGraph.getName());
-		inline_field_names.add("maxDepth");
-		inline_field_values.add(String.valueOf(maxDepth));
+		storage.executeQuery(
+				schema.queryDropTableIfExists(cursorTable) + 
+				schema.queryDropTableIfExists(nextTable) + 
+				schema.queryDropTableIfExists(answerTable) + 
+				schema.queryDropTableIfExists(subgraphRefTable));
 	}
 }

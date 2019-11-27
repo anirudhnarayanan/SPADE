@@ -19,39 +19,28 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import static spade.query.quickgrail.postgresql.core.CommonVariables.PRIMARY_KEY;
+
+import spade.query.quickgrail.core.execution.AbstractIntersectGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
 import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.storage.postgresql.PostgresExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PRIMARY_KEY;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
 
 /**
  * Intersect two graphs (i.e. find common vertices and edges).
  */
 
-public class IntersectGraph extends Instruction
-{
-	// Output graph.
-	private PostgreSQLGraph outputGraph;
-	// Input graphs.
-	private PostgreSQLGraph lhsGraph;
-	private PostgreSQLGraph rhsGraph;
-
-	public IntersectGraph(PostgreSQLGraph outputGraph, PostgreSQLGraph lhsGraph, PostgreSQLGraph rhsGraph)
-	{
-		this.outputGraph = outputGraph;
-		this.lhsGraph = lhsGraph;
-		this.rhsGraph = rhsGraph;
+public class IntersectGraph
+	extends AbstractIntersectGraph<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
+	
+	public IntersectGraph(PostgreSQLGraph outputGraph, PostgreSQLGraph lhsGraph, PostgreSQLGraph rhsGraph){
+		super(outputGraph, lhsGraph, rhsGraph);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
 		String outputVertexTable = outputGraph.getVertexTableName();
 		String outputEdgeTable = outputGraph.getEdgeTableName();
 		String lhsVertexTable = lhsGraph.getVertexTableName();
@@ -59,35 +48,11 @@ public class IntersectGraph extends Instruction
 		String rhsVertexTable = rhsGraph.getVertexTableName();
 		String rhsEdgeTable = rhsGraph.getEdgeTableName();
 
-		PostgresExecutor qs = (PostgresExecutor) ctx.getExecutor();
-		qs.executeQuery("INSERT INTO " + outputVertexTable +
+		storage.executeQuery("INSERT INTO " + outputVertexTable +
 				" SELECT " + PRIMARY_KEY + " FROM " + lhsVertexTable +
 				" WHERE " + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " + rhsVertexTable + ");");
-		qs.executeQuery("INSERT INTO " + outputEdgeTable +
+		storage.executeQuery("INSERT INTO " + outputEdgeTable +
 				" SELECT " + PRIMARY_KEY + " FROM " + lhsEdgeTable +
 				" WHERE " + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " + rhsEdgeTable + ");");
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "IntersectGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("outputGraph");
-		inline_field_values.add(outputGraph.getName());
-		inline_field_names.add("lhsGraph");
-		inline_field_values.add(lhsGraph.getName());
-		inline_field_names.add("rhsGraph");
-		inline_field_values.add(rhsGraph.getName());
 	}
 }

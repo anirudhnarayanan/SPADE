@@ -20,38 +20,27 @@
 package spade.query.quickgrail.neo4j.execution;
 
 import spade.query.quickgrail.core.entities.GraphMetadata.GraphMetadataComponent;
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractSetGraphMetadata;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
 import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
 import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
-
-import java.util.ArrayList;
+import spade.storage.Neo4j;
 
 /**
  * This class is not yet used in the SPADE integrated QuickGrail.
  */
-public class SetGraphMetadata extends Instruction
-{
+public class SetGraphMetadata
+	extends AbstractSetGraphMetadata<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
+	
 	private static final String kDigits = "0123456789ABCDEF";
-	private Neo4jGraphMetadata targetMetadata;
-	private GraphMetadataComponent component;
-	private Neo4jGraph sourceGraph;
-	private String name;
-	private String value;
 
 	public SetGraphMetadata(Neo4jGraphMetadata targetMetadata,
 							GraphMetadataComponent component,
 							Neo4jGraph sourceGraph,
 							String name,
-							String value)
-	{
-		this.targetMetadata = targetMetadata;
-		this.component = component;
-		this.sourceGraph = sourceGraph;
-		this.name = name;
-		this.value = value;
+							String value){
+		super(targetMetadata, component, sourceGraph, name, value);
 	}
 
 	private static String FormatStringLiteral(String input)
@@ -100,34 +89,7 @@ public class SetGraphMetadata extends Instruction
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){
 	}
 
-	@Override
-	public String getLabel()
-	{
-		return "SetGraphMetadata";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetMetadata");
-		inline_field_values.add(targetMetadata.getName());
-		inline_field_names.add("component");
-		inline_field_values.add(component.name().substring(1));
-		inline_field_names.add("sourceGraph");
-		inline_field_values.add(sourceGraph.getName());
-		inline_field_names.add("name");
-		inline_field_values.add(name);
-		inline_field_names.add("value");
-		inline_field_values.add(value);
-	}
 }

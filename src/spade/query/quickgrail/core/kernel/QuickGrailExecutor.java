@@ -19,62 +19,80 @@
  */
 package spade.query.quickgrail.core.kernel;
 
-import org.apache.commons.lang3.exception.ExceptionUtils;
-import spade.core.AbstractQuery;
-import spade.query.quickgrail.core.parser.DSLParserWrapper;
-import spade.query.quickgrail.core.parser.ParseProgram;
-import spade.query.quickgrail.core.utility.StorageExecutor;
-
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import org.apache.commons.lang3.exception.ExceptionUtils;
+
+import spade.core.AbstractStorage;
+import spade.core.Kernel;
+import spade.query.quickgrail.core.entities.Graph;
+import spade.query.quickgrail.core.entities.GraphMetadata;
+import spade.query.quickgrail.core.parser.DSLParserWrapper;
+import spade.query.quickgrail.core.parser.ParseProgram;
 
 /**
  * Top level class for the QuickGrail graph query storageExecutor.
  */
-public class QuickGrailExecutor extends AbstractQuery<String>
-{
-	private StorageExecutor storageExecutor;
-	private AbstractEnvironment env;
-	private static Logger logger = Logger.getLogger(QuickGrailExecutor.class.getName());
-
-	public void createEnvironment(String currentStorageName)
-	{
-		this.storageExecutor = StorageExecutor.getExecutor(currentStorageName);
-		this.env = EnvironmentFactory.createEnvironment(currentStorageName, this.storageExecutor);
+public class QuickGrailExecutor<
+	G extends Graph, GM extends GraphMetadata,
+	E extends AbstractEnvironment<G, GM, S>, S extends AbstractStorage>{
+	private final Logger logger = Logger.getLogger(this.getClass().getName());
+	
+	private final S storage;
+	private final AbstractResolver<G, GM, E, S> resolver;
+	private final E environment;
+	
+	public QuickGrailExecutor(S storage,
+			AbstractResolver<G, GM, E, S> resolver,
+			E environment){
+		this.storage = storage;
+		this.resolver = resolver;
+		this.environment = environment;
+		if(this.storage == null){
+			throw new RuntimeException("NULL storage for query executor");
+		}
+		if(this.resolver == null){
+			throw new RuntimeException("NULL resolver for query executor");
+		}
+		if(this.environment == null){
+			throw new RuntimeException("NULL environment for query executor");
+		}
+	}
+	
+	public final boolean isTheStorageSame(AbstractStorage storage){
+		return storage == this.storage; // Only reference check
+	}
+	
+	public final boolean isStorageShutdown(){
+		return !Kernel.isStoragePresentShallowCheck(storage);
+	}
+	
+	public final String getStorageSimpleName(){
+		return storage.getClass().getSimpleName();
 	}
 
-	@Override
-	public String execute(String query)
-	{
+	public String execute(String query){
 		ArrayList<Object> responses;
-		try
-		{
+		try{
 			DSLParserWrapper parserWrapper = new DSLParserWrapper();
 			ParseProgram parseProgram = parserWrapper.fromText(query);
 
 			logger.log(Level.INFO, "Parse tree:\n" + parseProgram.toString());
 
-			Resolver resolver = new Resolver();
-			Program program = resolver.resolveProgram(parseProgram, this.env);
+			QuickGrailProgram<G, GM, E, S> program = resolver.resolveProgram(parseProgram, environment);
 
 			logger.log(Level.INFO, "Execution plan:\n" + program.toString());
 
-			try
-			{
-				responses = program.execute(storageExecutor);
+			try{
+				responses = program.execute(storage);
+			}finally{
+				environment.gc();
 			}
-			finally
-			{
-				env.gc();
-			}
-		}
-		catch(Exception ex)
-		{
+		}catch(Exception ex){
 			responses = new ArrayList<>();
 			StringWriter stackTrace = new StringWriter();
 			PrintWriter pw = new PrintWriter(stackTrace);
@@ -86,21 +104,12 @@ public class QuickGrailExecutor extends AbstractQuery<String>
 			responses.add(stackTrace.toString());
 		}
 
-		if(responses == null || responses.isEmpty())
-		{
+		if(responses == null || responses.isEmpty()){
 			return "OK";
-		}
-		else
-		{
+		}else{
 			// Currently only return the last response.
 			Object response = responses.get(responses.size() - 1);
 			return response == null ? "" : response.toString();
 		}
-	}
-
-	@Override
-	public String execute(Map<String, List<String>> parameters, Integer limit)
-	{
-		throw new RuntimeException("Not supported");
 	}
 }

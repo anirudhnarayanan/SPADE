@@ -19,162 +19,145 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.query.quickgrail.core.entities.Graph.Direction;
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
-import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.storage.postgresql.PostgresExecutor;
-
 import java.util.ArrayList;
 
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.CHILD_VERTEX_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.EDGE_TABLE;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PARENT_VERTEX_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PRIMARY_KEY;
+import spade.query.quickgrail.core.entities.Graph.Direction;
+import spade.query.quickgrail.core.execution.AbstractGetLineage;
+import spade.query.quickgrail.core.kernel.ExecutionContext;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
+import spade.storage.PostgreSQLSchema;
 
 /**
  * Get the lineage of a set of vertices in a graph.
  */
-public class GetLineage extends Instruction
-{
-	// Output graph.
-	private PostgreSQLGraph targetGraph;
-	// Input graph.
-	private PostgreSQLGraph subjectGraph;
-	// Set of starting vertices.
-	private PostgreSQLGraph startGraph;
-	// Max depth.
-	private Integer depth;
-	// Direction (ancestors / descendants, or both).
-	private Direction direction;
-
+public class GetLineage
+	extends AbstractGetLineage<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
+	
 	public GetLineage(PostgreSQLGraph targetGraph, PostgreSQLGraph subjectGraph,
-					  PostgreSQLGraph startGraph, Integer depth, Direction direction)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.startGraph = startGraph;
-		this.depth = depth;
-		this.direction = direction;
+					  PostgreSQLGraph startGraph, Integer depth, Direction direction){
+		super(targetGraph, subjectGraph, startGraph, depth, direction);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
 		ArrayList<Direction> oneDirs = new ArrayList<>();
-		if(direction == Direction.kBoth)
-		{
+		if(direction == Direction.kBoth){
 			oneDirs.add(Direction.kAncestor);
 			oneDirs.add(Direction.kDescendant);
-		}
-		else
-		{
-			oneDirs.add(direction);
+		}else{
+			if(direction == Direction.kAncestor || direction == Direction.kDescendant){
+				oneDirs.add(direction);
+			}else{
+				throw new RuntimeException("Unknown direction: " + direction);
+			}
 		}
 
-		PostgresExecutor ps = (PostgresExecutor) ctx.getExecutor();
-
+		PostgreSQLSchema schema = storage.getSchema();
+		
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
-
 		String subjectEdgeTable = subjectGraph.getEdgeTableName();
+		
 		String filter = "";
-		if(!env.IsBaseGraph(subjectGraph))
-		{
-			filter = " AND edge." + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " + subjectEdgeTable + ")";
+		if(!env.IsBaseGraph(subjectGraph)){
+			filter = " AND edge." + schema.formatColumnNameForQuery(schema.hashColumnName) + 
+					" in (select " + schema.formatColumnNameForQuery(schema.hashColumnName) + " from " + 
+					schema.formatTableNameForQuery(subjectEdgeTable) + ")";
 		}
 
-		for(Direction oneDir : oneDirs)
-		{
-			executeOneDirection(oneDir, ps, filter);
-			ps.executeQuery("INSERT INTO " + targetVertexTable + " SELECT " + PRIMARY_KEY + " FROM m_answer;" +
-					"INSERT INTO " + targetEdgeTable + " SELECT " + PRIMARY_KEY +
-					" FROM m_answer_edge GROUP BY " + PRIMARY_KEY + ";");
+		String answerTable = "m_answer";
+		String cursorTable = "m_cur";
+		String nextTable = "m_next";
+		String edgeAnswerTable = "m_answer_edge";
+		
+		for(Direction oneDir : oneDirs){
+			executeOneDirection(oneDir, storage, filter, 
+					answerTable, cursorTable, nextTable, edgeAnswerTable);
+			storage.executeQuery(
+					"insert into " + schema.formatTableNameForQuery(targetVertexTable) + 
+					" select " + schema.formatColumnNameForQuery(schema.hashColumnName) + " from " +
+					schema.formatTableNameForQuery(answerTable) + "; insert into " +
+					schema.formatTableNameForQuery(targetEdgeTable) + " select " +
+					schema.formatColumnNameForQuery(schema.hashColumnName) + " from " +
+					schema.formatTableNameForQuery(answerTable) + " group by " + 
+					schema.formatColumnNameForQuery(schema.hashColumnName) + ";");
 		}
 
-		ps.executeQuery("DROP TABLE IF EXISTS m_cur;" +
-				"DROP TABLE IF EXISTS m_next;" +
-				"DROP TABLE IF EXISTS m_answer;" +
-				"DROP TABLE IF EXISTS m_answer_edge;");
+		storage.executeQuery(
+				schema.queryDropTableIfExists(cursorTable) +
+				schema.queryDropTableIfExists(nextTable) +
+				schema.queryDropTableIfExists(answerTable) +
+				schema.queryDropTableIfExists(edgeAnswerTable));
 	}
 
-	private void executeOneDirection(Direction dir, PostgresExecutor ps, String filter)
-	{
-		String src, dst;
-		if(dir == Direction.kAncestor)
-		{
-			src = "\"" + CHILD_VERTEX_KEY + "\"";
-			dst = "\"" + PARENT_VERTEX_KEY + "\"";
-		}
-		else
-		{
-			assert dir == Direction.kDescendant;
-			src = "\"" + PARENT_VERTEX_KEY + "\"";
-			dst = "\"" + CHILD_VERTEX_KEY + "\"";
+	private void executeOneDirection(Direction dir, PostgreSQL storage, String filter, 
+			String answerTable, String cursorTable, String nextTable, String edgeAnswerTable){
+		PostgreSQLSchema schema = storage.getSchema();
+		String formattedSrcName, formattedDstName;
+		if(dir == Direction.kAncestor){
+			formattedSrcName = schema.formatColumnNameForQuery(schema.childVertexHashColumnName);
+			formattedDstName = schema.formatColumnNameForQuery(schema.parentVertexHashColumnName);
+		}else if(dir == Direction.kDescendant){
+			formattedSrcName = schema.formatColumnNameForQuery(schema.parentVertexHashColumnName);
+			formattedDstName = schema.formatColumnNameForQuery(schema.childVertexHashColumnName);
+		}else{
+			throw new RuntimeException("Unknown direction: " + dir);
 		}
 
-		ps.executeQuery("DROP TABLE IF EXISTS m_cur;" +
-				"DROP TABLE IF EXISTS m_next;" +
-				"DROP TABLE IF EXISTS m_answer;" +
-				"DROP TABLE IF EXISTS m_answer_edge;" +
-				"CREATE TABLE m_cur (" + PRIMARY_KEY + " UUID);" +
-				"CREATE TABLE m_next (" + PRIMARY_KEY + " UUID);" +
-				"CREATE TABLE m_answer (" + PRIMARY_KEY + " UUID);" +
-				"CREATE TABLE m_answer_edge (" + PRIMARY_KEY + " UUID);");
+		storage.executeQuery(
+				schema.queriesDropAndCreateHashOnlyTable(cursorTable) +
+				schema.queriesDropAndCreateHashOnlyTable(nextTable) +
+				schema.queriesDropAndCreateHashOnlyTable(answerTable) +
+				schema.queriesDropAndCreateHashOnlyTable(edgeAnswerTable));
 
 		String startVertexTable = startGraph.getVertexTableName();
-		ps.executeQuery("INSERT INTO m_cur SELECT " + PRIMARY_KEY + " FROM " + startVertexTable + ";" +
-				"INSERT INTO m_answer SELECT " + PRIMARY_KEY + " FROM m_cur;");
+		
+		final String formattedHashColumn = schema.formatColumnNameForQuery(schema.hashColumnName);
+		final String formattedStartVertexTable = schema.formatTableNameForQuery(startVertexTable);
+		final String formattedCursorTable = schema.formatTableNameForQuery(cursorTable);
+		final String formattedNextTable = schema.formatTableNameForQuery(nextTable);
+		final String formattedAnswerTable = schema.formatTableNameForQuery(answerTable);
+		final String formattedEdgeAnswerTable = schema.formatTableNameForQuery(edgeAnswerTable);
+		final String formattedMainEdgeTable = schema.formatTableNameForQuery(schema.mainEdgeTableName);
+		
+		storage.executeQuery(
+				"insert into "+formattedCursorTable+" select " + formattedHashColumn + " from " + 
+				formattedStartVertexTable + ";" +
+				"insert into "+formattedAnswerTable+" select " + formattedHashColumn + " from "+formattedCursorTable+";");
 
 		String loopStmts =
-				"DROP TABLE IF EXISTS m_next;" + "CREATE TABLE m_next (" + PRIMARY_KEY + " UUID);" +
-						"INSERT INTO m_next SELECT " + dst + " FROM " + EDGE_TABLE +
-						" WHERE " + src + " IN (SELECT " + PRIMARY_KEY + " FROM m_cur)" + filter +
-						" GROUP BY " + dst + ";" +
-						"INSERT INTO m_answer_edge SELECT " + PRIMARY_KEY + " FROM " + EDGE_TABLE +
-						" WHERE " + src + " IN (SELECT " + PRIMARY_KEY + " FROM m_cur)" + filter + ";" +
-						"DROP TABLE IF EXISTS m_cur;" + "CREATE TABLE m_cur (" + PRIMARY_KEY + " UUID);" +
-						"INSERT INTO m_cur SELECT " + PRIMARY_KEY + " FROM m_next WHERE " + PRIMARY_KEY +
-						" NOT IN (SELECT " + PRIMARY_KEY + " FROM m_answer);" +
-						"INSERT INTO m_answer SELECT " + PRIMARY_KEY + " FROM m_cur;";
-		for(int i = 0; i < depth; ++i)
-		{
-			ps.executeQuery(loopStmts);
+				schema.queriesDropAndCreateHashOnlyTable(nextTable) +
+				"insert into " + formattedNextTable + " select " + formattedDstName + " from " +
+				formattedMainEdgeTable + " where " + formattedSrcName + " in (select " + formattedHashColumn + 
+				" from " + formattedCursorTable + ")" + filter + " group by " + formattedDstName + ";"; 
+				
+		loopStmts += 
+				"insert into " + formattedEdgeAnswerTable + " select " + formattedHashColumn + " from " + 
+				formattedMainEdgeTable + " where " + formattedSrcName + " in (select " + formattedHashColumn + 
+				" from " + formattedCursorTable + ") " + filter + ";";
+		
+		loopStmts += 
+				schema.queriesDropAndCreateHashOnlyTable(cursorTable);
+		
+		loopStmts += 
+				"insert into " + formattedCursorTable + " select " + formattedHashColumn + " from " +
+				formattedNextTable + " where " + formattedHashColumn + " not in (select " + formattedHashColumn + 
+				" from " + formattedAnswerTable + ");";
+		
+		loopStmts += 
+				"insert into " + formattedAnswerTable + " select " + formattedHashColumn + " from " +
+				formattedCursorTable + ";";
+		
+		for(int i = 0; i < depth; ++i){
+			storage.executeQuery(loopStmts);
 
-			String worksetSizeQuery = "COPY (SELECT COUNT(*) FROM m_cur) TO stdout;";
-			if(ps.executeQueryForLongResult(worksetSizeQuery) == 0)
-			{
+			long numEdges = storage.getRowCountOfTableSafe(cursorTable);
+			if(numEdges <= 0){
 				break;
 			}
 		}
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "GetLineage";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("startGraph");
-		inline_field_values.add(startGraph.getName());
-		inline_field_names.add("depth");
-		inline_field_values.add(String.valueOf(depth));
-		inline_field_names.add("direction");
-		inline_field_values.add(direction.name().substring(1));
 	}
 }

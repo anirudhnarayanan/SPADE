@@ -19,73 +19,54 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.core.AbstractEdge;
-import spade.core.AbstractVertex;
-import spade.core.Edge;
-import spade.core.Vertex;
-import spade.query.quickgrail.core.entities.Graph.ExportFormat;
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
-import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.query.quickgrail.postgresql.utility.PostgresUtil;
-import spade.storage.postgresql.PostgresExecutor;
+import static spade.query.quickgrail.core.entities.Graph.kNonForceDumpLimit;
+import static spade.query.quickgrail.core.entities.Graph.kNonForceVisualizeLimit;
 
 import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static spade.query.quickgrail.core.entities.Graph.kNonForceDumpLimit;
-import static spade.query.quickgrail.core.entities.Graph.kNonForceVisualizeLimit;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.CHILD_VERTEX_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.EDGE_TABLE;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PARENT_VERTEX_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PRIMARY_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.VERTEX_TABLE;
+import spade.core.AbstractEdge;
+import spade.core.AbstractVertex;
+import spade.core.Vertex;
+import spade.query.quickgrail.core.entities.Graph.ExportFormat;
+import spade.query.quickgrail.core.execution.AbstractExportGraph;
+import spade.query.quickgrail.core.kernel.ExecutionContext;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
+import spade.query.quickgrail.postgresql.core.PostgresUtil;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
+import spade.storage.PostgreSQLSchema;
 
 /**
  * Export a QuickGrail graph to spade.core.Graph or to DOT representation.
  */
-public class ExportGraph extends Instruction
-{
+public class ExportGraph
+	extends AbstractExportGraph<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
 	private static final Logger logger = Logger.getLogger(ExportGraph.class.getName());
-	private PostgreSQLGraph targetGraph;
-	private ExportFormat format;
-	private boolean force;
-
-	public ExportGraph(PostgreSQLGraph targetGraph, ExportFormat format, boolean force)
-	{
-		this.targetGraph = targetGraph;
-		this.format = format;
-		this.force = force;
+	
+	public ExportGraph(PostgreSQLGraph targetGraph, ExportFormat format, boolean force){
+		super(targetGraph, format, force);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		PostgresExecutor ps = (PostgresExecutor) ctx.getExecutor();
-
-		if(!force)
-		{
-			long numVertices = PostgresUtil.GetNumVertices(ps, targetGraph);
-			long numEdges = PostgresUtil.GetNumEdges(ps, targetGraph);
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
+		if(!force){
+			long numVertices = PostgresUtil.GetNumVertices(storage, targetGraph);
+			long numEdges = PostgresUtil.GetNumEdges(storage, targetGraph);
 			long graphsize = numVertices + numEdges;
-			if(format == ExportFormat.kNormal && (graphsize > kNonForceDumpLimit))
-			{
+			if(format == ExportFormat.kNormal && (graphsize > kNonForceDumpLimit)){
 				ctx.addResponse("It may take a long time to print the result data due to " +
 						"too many vertices/edges: " + numVertices + "/" + numEdges + "" +
 						"Please use 'force dump ...' to force the print");
 				return;
-			}
-			else if(format == ExportFormat.kDot && (graphsize > kNonForceVisualizeLimit))
-			{
+			}else if(format == ExportFormat.kDot && (graphsize > kNonForceVisualizeLimit)){
 				ctx.addResponse("It may take a long time to transfer the result data due to " +
 						"too many vertices/edges: " + numVertices + "/" + numEdges + "" +
 						"Please use 'force visualize ...' to force the transfer");
@@ -93,23 +74,33 @@ public class ExportGraph extends Instruction
 			}
 		}
 
-		ps.executeQuery("DROP TABLE IF EXISTS m_vertex;" +
-				"DROP TABLE IF EXISTS m_edge;" +
-				"CREATE TABLE m_vertex(" + PRIMARY_KEY + " UUID);" +
-				"CREATE TABLE m_edge(" + PRIMARY_KEY + " UUID);");
+		PostgreSQLSchema schema = storage.getSchema();
+		
+		final String mVertexTable = "m_vertex",
+				mEdgeTable = "m_edge";
+		
+		storage.executeQuery(
+				schema.queriesDropAndCreateHashOnlyTable(mVertexTable) + 
+				schema.queriesDropAndCreateHashOnlyTable(mEdgeTable));
 
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
-		ps.executeQuery("INSERT INTO m_vertex SELECT " + PRIMARY_KEY + " FROM " + targetVertexTable + " GROUP BY " +
-				PRIMARY_KEY + ";" +
-				"INSERT INTO m_edge SELECT " + PRIMARY_KEY + " FROM " + targetEdgeTable + " GROUP BY " +
-				PRIMARY_KEY + ";");
+		storage.executeQuery(
+				"insert into " + schema.formatTableNameForQuery(mVertexTable) + 
+				" select " + schema.formatColumnNameForQuery(schema.hashColumnName) + 
+				" from " + schema.formatTableNameForQuery(targetVertexTable) + " group by " +
+				schema.formatColumnNameForQuery(schema.hashColumnName) + ";" +
+				"insert into " + schema.formatTableNameForQuery(mEdgeTable) + 
+				" select " + schema.formatColumnNameForQuery(schema.hashColumnName) + 
+				" from " + schema.formatTableNameForQuery(targetEdgeTable) + " group by " +
+				schema.formatColumnNameForQuery(schema.hashColumnName) + ";");
 
-		HashMap<String, AbstractVertex> vertices = exportVertices(ps, "m_vertex");
-		Set<AbstractEdge> edges = exportEdges(ps, "m_edge", vertices);
+		HashMap<String, AbstractVertex> vertices = exportVertices(storage, mVertexTable);
+		Set<AbstractEdge> edges = exportEdges(storage, "m_edge", vertices);
 
-		ps.executeQuery("DROP TABLE IF EXISTS m_vertex;" +
-				"DROP TABLE IF EXISTS m_edge;");
+		storage.executeQuery(
+				schema.queryDropTableIfExists(mVertexTable) +
+				schema.queryDropTableIfExists(mEdgeTable));
 
 		spade.core.Graph graph = new spade.core.Graph();
 		graph.vertexSet().addAll(vertices.values());
@@ -126,138 +117,118 @@ public class ExportGraph extends Instruction
 	}
 
 	private HashMap<String, AbstractVertex> exportVertices(
-			PostgresExecutor ps, String targetVertexTable)
-	{
+			PostgreSQL storage, String targetVertexTable){
 		HashMap<String, AbstractVertex> vertices = new HashMap<>();
-		long numVertices = ps.executeQueryForLongResult(
-				"COPY (SELECT COUNT(*) FROM " + targetVertexTable + ") TO stdout;");
-		if(numVertices == 0)
-		{
+		long numVertices = storage.getRowCountOfTableSafe(targetVertexTable);
+		if(numVertices <= 0){
 			return vertices;
-		}
-
-		try
-		{
-			ResultSet result = ps.executeQuery(
-					"SELECT * FROM " + VERTEX_TABLE + " WHERE " + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " +
-							targetVertexTable + ");");
-			ResultSetMetaData metadata = result.getMetaData();
-			int columnCount = metadata.getColumnCount();
-			Map<Integer, String> columnLabels = new HashMap<>();
-			for(int i = 1; i <= columnCount; i++)
-			{
-				columnLabels.put(i, metadata.getColumnName(i));
-			}
-			while(result.next())
-			{
-				String hash = null;
-				AbstractVertex vertex = new Vertex();
-				for(int i = 1; i <= columnCount; i++)
-				{
-					String colName = columnLabels.get(i);
-					String value = result.getString(i);
-					if(value != null & colName != null)
-					{
-						if(!colName.equals(PRIMARY_KEY))
-						{
-							vertex.addAnnotation(colName, value);
-						}
-						else
-						{
-							hash = value;
+		}else{
+			PostgreSQLSchema schema = storage.getSchema();
+			String mainVertexTableName = schema.mainVertexTableName;
+			String hashColumnName = schema.hashColumnName;
+			
+			ResultSet resultSet = null;
+			try{
+				resultSet = storage.executeQuery(
+						"select * from " + schema.formatTableNameForQuery(mainVertexTableName) + 
+						" where " + schema.formatColumnNameForQuery(hashColumnName) + 
+						" in (select " + schema.formatColumnNameForQuery(hashColumnName) + " from " +
+						schema.formatTableNameForQuery(targetVertexTable) + ");");
+				
+				List<Map<String, String>> listOfMaps = PostgresUtil.sqlTableAsListOfKeyValuesMap(resultSet);
+				if(listOfMaps == null){
+					// do nothing
+				}else{
+					for(Map<String, String> annotations : listOfMaps){
+						String hash = annotations.remove(hashColumnName); // remove if exists
+						if(hash == null){ // do what? TODO
+							
+						}else{
+							AbstractVertex vertex = inflateVertex(hash, annotations);
+							if(vertex != null){
+								vertices.put(hash, vertex);
+							}
 						}
 					}
 				}
-				vertices.put(hash, vertex);
 			}
+			catch(Exception ex){
+				logger.log(Level.SEVERE, "Error fetching vertices from the database!", ex);
+			}finally{
+				if(resultSet != null){
+					try{ resultSet.close(); }catch(Exception e){}
+				}
+			}
+			return vertices;
 		}
-		catch(Exception ex)
-		{
-			logger.log(Level.SEVERE, "Error fetching vertices from the database!", ex);
-		}
-		return vertices;
 	}
 
 	private Set<AbstractEdge> exportEdges(
-			PostgresExecutor ps, String targetEdgeTable, HashMap<String, AbstractVertex> vertices)
-	{
+			PostgreSQL storage, String targetEdgeTable, HashMap<String, AbstractVertex> vertices){
 		Set<AbstractEdge> edges = new HashSet<>();
-		long numEdges = ps.executeQueryForLongResult(
-				"COPY (SELECT COUNT(*) FROM " + targetEdgeTable + ") TO stdout;");
-		if(numEdges == 0)
-		{
+		long numEdges = storage.getRowCountOfTableSafe(targetEdgeTable);
+		if(numEdges <= 0){
 			return edges;
-		}
-
-		try
-		{
-			ResultSet result = ps.executeQuery(
-					"SELECT * FROM " + EDGE_TABLE + " WHERE " + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " +
-							targetEdgeTable + ");");
-			ResultSetMetaData metadata = result.getMetaData();
-			int columnCount = metadata.getColumnCount();
-
-			Map<Integer, String> columnLabels = new HashMap<>();
-			for(int i = 1; i <= columnCount; i++)
-			{
-				columnLabels.put(i, metadata.getColumnName(i));
-			}
-			while(result.next())
-			{
-				AbstractEdge edge = new Edge(null, null);
-				for(int i = 1; i <= columnCount; i++)
-				{
-					String colName = columnLabels.get(i);
-					String value = result.getString(i);
-					if(value != null & colName != null)
-					{
-						if(!colName.equals(PRIMARY_KEY))
-						{
-							if(colName.equals(CHILD_VERTEX_KEY))
-							{
-								AbstractVertex childVertex = vertices.get(value);
-								edge.setChildVertex(childVertex);
-							}
-							if(colName.equals(PARENT_VERTEX_KEY))
-							{
-								AbstractVertex parentVertex = vertices.get(value);
-								edge.setParentVertex(parentVertex);
-							}
-							edge.addAnnotation(colName, value);
+		}else{
+			PostgreSQLSchema schema = storage.getSchema();
+			String mainEdgeTableName = schema.mainEdgeTableName;
+			String hashColumnName = schema.hashColumnName;
+			String childHashColumnName = schema.childVertexHashColumnName;
+			String parentHashColumnName = schema.parentVertexHashColumnName;
+			
+			ResultSet resultSet = null;
+			try{
+				resultSet = storage.executeQuery(
+						"select * from " + schema.formatTableNameForQuery(mainEdgeTableName) + 
+						" where " + schema.formatColumnNameForQuery(hashColumnName) + 
+						" in (select " + schema.formatColumnNameForQuery(hashColumnName) + " from " +
+						schema.formatTableNameForQuery(targetEdgeTable) + ");");
+				
+				List<Map<String, String>> listOfMaps = PostgresUtil.sqlTableAsListOfKeyValuesMap(resultSet);
+				if(listOfMaps == null){
+					// do nothing
+				}else{
+					for(Map<String, String> annotations : listOfMaps){
+						String edgeHash = annotations.remove(hashColumnName);
+						String childHash = annotations.remove(childHashColumnName);
+						String parentHash = annotations.remove(parentHashColumnName);
+						
+						AbstractEdge edge = inflateEdge(edgeHash, annotations, 
+								vertices.get(childHash), vertices.get(parentHash));
+						if(edge != null){
+							edges.add(edge);
 						}
 					}
 				}
-				edges.add(edge);
 			}
+			catch(Exception ex){
+				logger.log(Level.SEVERE, "Error fetching edges from the database!", ex);
+			}finally{
+				if(resultSet != null){try{resultSet.close();}catch(Exception e){}}
+			}
+			return edges;
 		}
-		catch(Exception ex)
-		{
-			logger.log(Level.SEVERE, "Error fetching edges from the database!", ex);
+	}
+	
+	public static AbstractVertex inflateVertex(String hash,
+    		Map<String, String> annotations){
+		if(annotations != null){
+			AbstractVertex vertex = new Vertex();
+			vertex.addAnnotations(annotations);
+			return vertex;
 		}
-
-		return edges;
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "ExportGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("format");
-		inline_field_values.add(format.name());
-		inline_field_names.add("force");
-		inline_field_values.add(String.valueOf(force));
-	}
+		return null;
+    }
+    
+    public static AbstractEdge inflateEdge(String edgeHash, Map<String, String> edgeAnnotations,
+    		AbstractVertex childVertex, AbstractVertex parentVertex){
+    	if(childVertex != null && parentVertex != null){
+	    	AbstractEdge edge = new spade.core.Edge(childVertex, parentVertex);
+	    	if(edgeAnnotations != null){
+	    		edge.addAnnotations(edgeAnnotations);
+	    	}
+	    	return edge;
+    	}
+    	return null;
+    }
 }

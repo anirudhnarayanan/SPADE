@@ -19,51 +19,27 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractCreateEmptyGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
+import spade.query.quickgrail.postgresql.core.PostgresUtil;
 import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.query.quickgrail.postgresql.utility.PostgresUtil;
-import spade.storage.postgresql.PostgresExecutor;
-
-import java.util.ArrayList;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
 
 /**
  * Create an empty QuickGrail graph.
  */
-public class CreateEmptyGraph extends Instruction
-{
-	// Output graph.
-	private PostgreSQLGraph graph;
+public class CreateEmptyGraph
+	extends AbstractCreateEmptyGraph<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
 
-	public CreateEmptyGraph(PostgreSQLGraph graph)
-	{
-		this.graph = graph;
+	public CreateEmptyGraph(PostgreSQLGraph graph){
+		super(graph);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		PostgresUtil.CreateEmptyGraph((PostgresExecutor) ctx.getExecutor(), graph);
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
+		PostgresUtil.CreateEmptyGraph(storage, outputGraph);
 	}
 
-	@Override
-	public String getLabel()
-	{
-		return "CreateEmptyGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("graph");
-		inline_field_values.add(graph.getName());
-	}
 }

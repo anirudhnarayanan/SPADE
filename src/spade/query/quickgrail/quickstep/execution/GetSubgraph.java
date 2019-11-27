@@ -19,38 +19,27 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractGetSubgraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
 import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
-import spade.storage.quickstep.QuickstepExecutor;
-
-import java.util.ArrayList;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
+import spade.storage.Quickstep;
 
 /**
  * Let $S be the subject graph and $T be the skeleton graph.
  * The operation $S.getSubgraph($T) is to find all the vertices and edges that
  * are spanned by the skeleton graph.
  */
-public class GetSubgraph extends Instruction
-{
-	private QuickstepGraph targetGraph;
-	private QuickstepGraph subjectGraph;
-	private QuickstepGraph skeletonGraph;
+public class GetSubgraph
+	extends AbstractGetSubgraph<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
 
-	public GetSubgraph(QuickstepGraph targetGraph, QuickstepGraph subjectGraph, QuickstepGraph skeletonGraph)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.skeletonGraph = skeletonGraph;
+	public GetSubgraph(QuickstepGraph targetGraph, QuickstepGraph subjectGraph, QuickstepGraph skeletonGraph){
+		super(targetGraph, subjectGraph, skeletonGraph);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		QuickstepExecutor qs = (QuickstepExecutor) ctx.getExecutor();
-
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
 		String subjectVertexTable = subjectGraph.getVertexTableName();
@@ -58,10 +47,10 @@ public class GetSubgraph extends Instruction
 		String skeletonVertexTable = skeletonGraph.getVertexTableName();
 		String skeletonEdgeTable = skeletonGraph.getEdgeTableName();
 
-		qs.executeQuery("DROP TABLE m_answer;\n" + "CREATE TABLE m_answer (id INT);");
+		storage.executeQuery("DROP TABLE m_answer;\n" + "CREATE TABLE m_answer (id INT);");
 
 		// Get vertices.
-		qs.executeQuery("\\analyzerange " + subjectVertexTable + "\n" +
+		storage.executeQuery("\\analyzerange " + subjectVertexTable + "\n" +
 				"INSERT INTO m_answer SELECT id FROM " + skeletonVertexTable +
 				" WHERE id IN (SELECT id FROM " + subjectVertexTable + ");\n" +
 				"INSERT INTO m_answer SELECT src FROM edge " +
@@ -74,35 +63,12 @@ public class GetSubgraph extends Instruction
 				"INSERT INTO " + targetVertexTable + " SELECT id FROM m_answer GROUP BY id;\n");
 
 		// Get edges.
-		qs.executeQuery("\\analyzerange " + subjectEdgeTable + "\n" +
+		storage.executeQuery("\\analyzerange " + subjectEdgeTable + "\n" +
 				"INSERT INTO " + targetEdgeTable +
 				" SELECT s.id FROM " + subjectEdgeTable + " s, edge e" +
 				" WHERE s.id = e.id AND e.src IN (SELECT id FROM m_answer)" +
 				" AND e.dst IN (SELECT id FROM m_answer) GROUP BY s.id;");
 
-		qs.executeQuery("DROP TABLE m_answer;");
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "GetSubgraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("skeletonGraph");
-		inline_field_values.add(skeletonGraph.getName());
+		storage.executeQuery("DROP TABLE m_answer;");
 	}
 }

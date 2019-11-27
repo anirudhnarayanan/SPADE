@@ -19,44 +19,29 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
+import static spade.query.quickgrail.neo4j.core.CommonVariables.NodeTypes.VERTEX;
+
 import spade.query.quickgrail.core.entities.Graph.GraphComponent;
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractSubtractGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
+import spade.query.quickgrail.neo4j.core.Neo4jStorageHelper;
 import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
-import spade.query.quickgrail.neo4j.utility.Neo4jUtil;
-import spade.storage.neo4j.Neo4jExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.NodeTypes.VERTEX;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
+import spade.storage.Neo4j;
 
 /**
  * Subtract one graph from the other.
  */
-public class SubtractGraph extends Instruction
-{
-	// Output graph.
-	private Neo4jGraph outputGraph;
-	// Minuend graph.
-	private Neo4jGraph minuendGraph;
-	// Subtrahend graph.
-	private Neo4jGraph subtrahendGraph;
-	// Graph components that should be involved in the operation (vertices / edges, or both).
-	private GraphComponent component;
-
-	public SubtractGraph(Neo4jGraph outputGraph, Neo4jGraph minuendGraph, Neo4jGraph subtrahendGraph, GraphComponent component)
-	{
-		this.outputGraph = outputGraph;
-		this.minuendGraph = minuendGraph;
-		this.subtrahendGraph = subtrahendGraph;
-		this.component = component;
+public class SubtractGraph
+	extends AbstractSubtractGraph<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
+	
+	public SubtractGraph(Neo4jGraph outputGraph, Neo4jGraph minuendGraph, Neo4jGraph subtrahendGraph, GraphComponent component){
+		super(outputGraph, minuendGraph, subtrahendGraph, component);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){
 		String outputVertexTable = outputGraph.getVertexTableName();
 		String outputEdgeTable = outputGraph.getEdgeTableName();
 		String minuendVertexTable = minuendGraph.getVertexTableName();
@@ -64,13 +49,12 @@ public class SubtractGraph extends Instruction
 		String subtrahendVertexTable = subtrahendGraph.getVertexTableName();
 		String subtrahendEdgeTable = subtrahendGraph.getEdgeTableName();
 
-		Neo4jExecutor ns = (Neo4jExecutor) ctx.getExecutor();
 		String cypherQuery = "";
 		if(component == null || component == GraphComponent.kVertex)
 		{
 			String condition = "x:" + minuendVertexTable +
 					" AND NOT x:" + subtrahendVertexTable;
-			cypherQuery = Neo4jUtil.vertexLabelQuery(condition, VERTEX.toString(), outputVertexTable);
+			cypherQuery = Neo4jStorageHelper.vertexLabelQuery(condition, VERTEX.toString(), outputVertexTable);
 			// allows execution of multiple MATCH queries in one statement
 			cypherQuery += " WITH count(*) as dummy \n";
 		}
@@ -83,7 +67,7 @@ public class SubtractGraph extends Instruction
 			}
 			else
 			{
-				condition += " x.quickgrail_symbol CONTAINS " + Neo4jUtil.formatSymbol(minuendEdgeTable);
+				condition += " x.quickgrail_symbol CONTAINS " + Neo4jStorageHelper.formatSymbol(minuendEdgeTable);
 			}
 			if(env.IsBaseGraph(subtrahendGraph))
 			{
@@ -91,35 +75,10 @@ public class SubtractGraph extends Instruction
 			}
 			else
 			{
-				condition += " AND NOT x.quickgrail_symbol CONTAINS " + Neo4jUtil.formatSymbol(subtrahendEdgeTable);
+				condition += " AND NOT x.quickgrail_symbol CONTAINS " + Neo4jStorageHelper.formatSymbol(subtrahendEdgeTable);
 			}
-			cypherQuery += Neo4jUtil.edgeSymbolQuery(condition, outputEdgeTable);
+			cypherQuery += Neo4jStorageHelper.edgeSymbolQuery(condition, outputEdgeTable);
 		}
-		ns.executeQuery(cypherQuery);
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "SubtractGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(ArrayList<String> inline_field_names, ArrayList<String> inline_field_values,
-									   ArrayList<String> non_container_child_field_names, ArrayList<TreeStringSerializable> non_container_child_fields,
-									   ArrayList<String> container_child_field_names,
-									   ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("outputGraph");
-		inline_field_values.add(outputGraph.getName());
-		inline_field_names.add("minuendGraph");
-		inline_field_values.add(minuendGraph.getName());
-		inline_field_names.add("subtrahendGraph");
-		inline_field_values.add(subtrahendGraph.getName());
-		if(this.component != null)
-		{
-			inline_field_names.add("component");
-			inline_field_values.add(component.name());
-		}
+		storage.executeQuery(cypherQuery);
 	}
 }

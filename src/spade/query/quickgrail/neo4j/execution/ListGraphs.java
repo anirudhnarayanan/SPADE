@@ -19,36 +19,32 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import java.util.Map;
+
+import spade.query.quickgrail.core.execution.AbstractListGraphs;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
 import spade.query.quickgrail.core.types.LongType;
 import spade.query.quickgrail.core.types.StringType;
 import spade.query.quickgrail.core.utility.ResultTable;
 import spade.query.quickgrail.core.utility.Schema;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-import spade.query.quickgrail.neo4j.utility.Neo4jUtil;
-import spade.storage.neo4j.Neo4jExecutor;
-
-import java.util.ArrayList;
-import java.util.Map;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
+import spade.query.quickgrail.neo4j.core.Neo4jStorageHelper;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
+import spade.storage.Neo4j;
 
 /**
  * List all existing graphs in Neo4j storage.
  */
-public class ListGraphs extends Instruction
-{
-	private String style;
+public class ListGraphs 
+	extends AbstractListGraphs<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
 
-	public ListGraphs(String style)
-	{
-		this.style = style;
+	public ListGraphs(String style){
+		super(style);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		Neo4jExecutor ns = (Neo4jExecutor) ctx.getExecutor();
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){
 		ResultTable table = new ResultTable();
 
 		Map<String, String> symbols = env.getSymbols();
@@ -56,10 +52,10 @@ public class ListGraphs extends Instruction
 		{
 			if(symbol.startsWith("$"))
 			{
-				addSymbol(ns, symbol, table);
+				addSymbol(storage, symbol, table);
 			}
 		}
-		addSymbol(ns, "$base", table);
+		addSymbol(storage, "$base", table);
 
 		Schema schema = new Schema();
 		schema.addColumn("Graph Name", StringType.GetInstance());
@@ -73,34 +69,15 @@ public class ListGraphs extends Instruction
 		ctx.addResponse(table.toString());
 	}
 
-	private void addSymbol(Neo4jExecutor ns, String symbol, ResultTable table)
+	private void addSymbol(Neo4j storage, String symbol, ResultTable table)
 	{
 		ResultTable.Row row = new ResultTable.Row();
 		row.add(symbol);
 		if(!style.equals("name"))
 		{
-			row.add(Neo4jUtil.GetNumVertices(ns, symbol));
-			row.add(Neo4jUtil.GetNumEdges(ns, symbol));
+			row.add(Neo4jStorageHelper.GetNumVertices(storage, symbol));
+			row.add(Neo4jStorageHelper.GetNumEdges(storage, symbol));
 		}
 		table.addRow(row);
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "ListGraphs";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("style");
-		inline_field_values.add(style);
 	}
 }

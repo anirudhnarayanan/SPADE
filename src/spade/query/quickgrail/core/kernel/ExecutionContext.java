@@ -19,36 +19,23 @@
  */
 package spade.query.quickgrail.core.kernel;
 
-import spade.query.quickgrail.core.utility.StorageExecutor;
-
 import java.util.ArrayList;
 
 /**
  * QuickGrail runtime environment.
  */
-public class ExecutionContext
-{
-	private StorageExecutor executor;
+public class ExecutionContext{
 	private ArrayList<Object> responses;
 
-	public ExecutionContext(StorageExecutor executor)
-	{
-		this.executor = executor;
+	public ExecutionContext(){
 		this.responses = new ArrayList<>();
 	}
-
-	public StorageExecutor getExecutor()
-	{
-		return executor;
-	}
-
-	public void addResponse(Object response)
-	{
+	
+	public void addResponse(Object response){
 		responses.add(response);
 	}
 
-	public ArrayList<Object> getResponses()
-	{
+	public ArrayList<Object> getResponses(){
 		return responses;
 	}
 }

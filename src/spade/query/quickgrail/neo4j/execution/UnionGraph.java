@@ -19,50 +19,40 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.EDGE_ALIAS;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.NodeTypes.VERTEX;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.RelationshipTypes.EDGE;
+import static spade.query.quickgrail.neo4j.core.Neo4jStorageHelper.formatSymbol;
+
+import spade.query.quickgrail.core.execution.AbstractUnionGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
+import spade.query.quickgrail.neo4j.core.Neo4jStorageHelper;
 import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
-import spade.query.quickgrail.neo4j.utility.Neo4jUtil;
-import spade.storage.neo4j.Neo4jExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.EDGE_ALIAS;
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.NodeTypes.VERTEX;
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.RelationshipTypes.EDGE;
-import static spade.query.quickgrail.neo4j.utility.Neo4jUtil.formatSymbol;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
+import spade.storage.Neo4j;
 
 /**
  * Union one graph into the other.
  */
-public class UnionGraph extends Instruction
-{
-	// The target graph.
-	private Neo4jGraph targetGraph;
-	// The source graph to be union-ed into the target graph.
-	private Neo4jGraph sourceGraph;
-
-	public UnionGraph(Neo4jGraph targetGraph, Neo4jGraph sourceGraph)
-	{
-		this.targetGraph = targetGraph;
-		this.sourceGraph = sourceGraph;
+public class UnionGraph
+	extends AbstractUnionGraph<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
+	
+	public UnionGraph(Neo4jGraph targetGraph, Neo4jGraph sourceGraph){
+		super(targetGraph, sourceGraph);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){
 		// go into sourceGraph and put labels of targetGraph in all its edges and vertices
 		String sourceVertexTable = sourceGraph.getVertexTableName();
 		String sourceEdgeTable = sourceGraph.getEdgeTableName();
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
 
-		Neo4jExecutor ns = (Neo4jExecutor) ctx.getExecutor();
 		// union vertices
 		String condition = " x: " + sourceVertexTable;
-		String cypherQuery = Neo4jUtil.vertexLabelQuery(condition, VERTEX.toString(), targetVertexTable);
+		String cypherQuery = Neo4jStorageHelper.vertexLabelQuery(condition, VERTEX.toString(), targetVertexTable);
 
 		// allows execution of multiple queries in one statement
 		cypherQuery += " WITH count(*) as dummy \n";
@@ -89,27 +79,6 @@ public class UnionGraph extends Instruction
 				" FOREACH (d IN actions.d | " + removeSymbol + ")" +
 				" FOREACH(a IN actions.a | " + addSymbol + ")";
 
-		ns.executeQuery(cypherQuery);
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "UnionGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("sourceGraph");
-		inline_field_values.add(sourceGraph.getName());
+		storage.executeQuery(cypherQuery);
 	}
 }

@@ -19,39 +19,33 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import java.util.Map;
+import java.util.Map.Entry;
+
+import spade.query.quickgrail.core.execution.AbstractListGraphs;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
 import spade.query.quickgrail.core.types.LongType;
 import spade.query.quickgrail.core.types.StringType;
 import spade.query.quickgrail.core.utility.ResultTable;
 import spade.query.quickgrail.core.utility.Schema;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
+import spade.query.quickgrail.postgresql.core.PostgresUtil;
 import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.query.quickgrail.postgresql.utility.Environment;
-import spade.query.quickgrail.postgresql.utility.PostgresUtil;
-import spade.storage.postgresql.PostgresExecutor;
-
-import java.util.ArrayList;
-import java.util.Map;
-import java.util.Map.Entry;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
 
 /**
  * List all existing graphs in Postgres storage.
  */
-public class ListGraphs extends Instruction
-{
-	private String style;
-
-	public ListGraphs(String style)
-	{
-		this.style = style;
+public class ListGraphs
+	extends AbstractListGraphs<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
+	
+	public ListGraphs(String style){
+		super(style);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		PostgresExecutor qs = (PostgresExecutor) ctx.getExecutor();
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
 		ResultTable table = new ResultTable();
 
 		Map<String, String> symbols = env.getSymbols();
@@ -60,10 +54,10 @@ public class ListGraphs extends Instruction
 			String symbol = entry.getKey();
 			if(symbol.startsWith("$"))
 			{
-				addSymbol(qs, symbol, new PostgreSQLGraph(entry.getValue()), table);
+				addSymbol(storage, symbol, new PostgreSQLGraph(entry.getValue()), table);
 			}
 		}
-		addSymbol(qs, "$base", Environment.kBaseGraph, table);
+		addSymbol(storage, "$base", PostgreSQLEnvironment.kBaseGraph, table);
 
 		Schema schema = new Schema();
 		schema.addColumn("Graph Name", StringType.GetInstance());
@@ -77,35 +71,16 @@ public class ListGraphs extends Instruction
 		ctx.addResponse(table.toString());
 	}
 
-	private void addSymbol(PostgresExecutor qs, String symbol,
+	private void addSymbol(PostgreSQL storage, String symbol,
 						   PostgreSQLGraph graph, ResultTable table)
 	{
 		ResultTable.Row row = new ResultTable.Row();
 		row.add(symbol);
 		if(!style.equals("name"))
 		{
-			row.add(PostgresUtil.GetNumVertices(qs, graph));
-			row.add(PostgresUtil.GetNumEdges(qs, graph));
+			row.add(PostgresUtil.GetNumVertices(storage, graph));
+			row.add(PostgresUtil.GetNumEdges(storage, graph));
 		}
 		table.addRow(row);
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "ListGraphs";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("style");
-		inline_field_values.add(style);
 	}
 }

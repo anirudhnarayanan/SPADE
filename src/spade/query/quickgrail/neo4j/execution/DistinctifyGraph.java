@@ -19,58 +19,29 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractDistinctifyGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
 import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
-
-import java.util.ArrayList;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
+import spade.storage.Neo4j;
 
 /**
  * Remove all duplicated vertices and edges.
  */
-public class DistinctifyGraph extends Instruction
-{
-	// Input graph.
-	private Neo4jGraph targetGraph;
-	// Output graph.
-	private Neo4jGraph sourceGraph;
-
-	public DistinctifyGraph(Neo4jGraph targetGraph, Neo4jGraph sourceGraph)
-	{
-		this.targetGraph = targetGraph;
-		this.sourceGraph = sourceGraph;
+public class DistinctifyGraph
+	extends AbstractDistinctifyGraph<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
+	
+	public DistinctifyGraph(Neo4jGraph targetGraph, Neo4jGraph sourceGraph){
+		super(targetGraph, sourceGraph);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		if(!targetGraph.getName().equals(sourceGraph.getName()))
-		{
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){
+		if(!targetGraph.getName().equals(sourceGraph.getName())){
 			UnionGraph unionGraph = new UnionGraph(targetGraph, sourceGraph);
-			unionGraph.execute(env, ctx);
+			unionGraph.execute(env, ctx, storage);
 		}
 	}
-
-	@Override
-	public String getLabel()
-	{
-		return "DistinctifyGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("sourceGraph");
-		inline_field_values.add(sourceGraph.getName());
-	}
+	
 }

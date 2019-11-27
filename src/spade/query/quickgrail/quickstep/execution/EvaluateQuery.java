@@ -19,47 +19,25 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractEvaluateQuery;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-
-import java.util.ArrayList;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
+import spade.storage.Quickstep;
 
 /**
  * Evaluate an arbitrary SQL query (that is supported by Quickstep).
  */
-public class EvaluateQuery extends Instruction
-{
-	private String sqlQuery;
+public class EvaluateQuery 
+	extends AbstractEvaluateQuery<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
 
-	public EvaluateQuery(String sqlQuery)
-	{
-		this.sqlQuery = sqlQuery;
+	public EvaluateQuery(String sqlQuery){
+		super(sqlQuery);
 	}
 
 	@Override
-	public String getLabel()
-	{
-		return "EvaluateQuery";
-	}
-
-	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		ctx.getExecutor().executeQuery(sqlQuery);
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("sqlQuery");
-		inline_field_values.add(sqlQuery);
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
+		storage.executeQuery(query);
 	}
 }

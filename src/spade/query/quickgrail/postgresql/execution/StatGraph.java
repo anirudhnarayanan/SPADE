@@ -19,59 +19,30 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractStatGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
 import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.storage.postgresql.PostgresExecutor;
-
-import java.util.ArrayList;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
 
 /**
  * Show statistics of a graph.
  */
-public class StatGraph extends Instruction
-{
-	private PostgreSQLGraph targetGraph;
-
-	public StatGraph(PostgreSQLGraph targetGraph)
-	{
-		this.targetGraph = targetGraph;
+public class StatGraph
+	extends AbstractStatGraph<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
+	
+	public StatGraph(PostgreSQLGraph targetGraph){
+		super(targetGraph);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		PostgresExecutor qs = (PostgresExecutor) ctx.getExecutor();
-
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
-		long numVertices = qs.executeQueryForLongResult(
-				"COPY (SELECT COUNT(*) FROM " + targetVertexTable + ") TO stdout;");
-		long numEdges = qs.executeQueryForLongResult(
-				"COPY (SELECT COUNT(*) FROM " + targetEdgeTable + ") TO stdout;");
-
+		long numVertices = storage.getRowCountOfTableSafe(targetVertexTable);
+		long numEdges = storage.getRowCountOfTableSafe(targetEdgeTable);
 		String stat = "# vertices = " + numVertices + ", # edges = " + numEdges;
 		ctx.addResponse(stat);
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "StatGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
 	}
 }

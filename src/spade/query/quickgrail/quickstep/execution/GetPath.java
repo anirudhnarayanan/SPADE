@@ -19,52 +19,32 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractGetPath;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
 import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
-import spade.storage.quickstep.QuickstepExecutor;
-
-import java.util.ArrayList;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
+import spade.storage.Quickstep;
 
 /**
  * Get a graph that includes all the paths from a set of source vertices to a
  * set of destination vertices.
  */
-public class GetPath extends Instruction
-{
-	// Output graph.
-	private QuickstepGraph targetGraph;
-	// Input graph.
-	private QuickstepGraph subjectGraph;
-	// Set of source vertices.
-	private QuickstepGraph srcGraph;
-	// Set of destination vertices.
-	private QuickstepGraph dstGraph;
-	// Max path length.
-	private Integer maxDepth;
-
+public class GetPath 
+	extends AbstractGetPath<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
+	
 	public GetPath(QuickstepGraph targetGraph, QuickstepGraph subjectGraph,
 				   QuickstepGraph srcGraph, QuickstepGraph dstGraph,
-				   Integer maxDepth)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.srcGraph = srcGraph;
-		this.dstGraph = dstGraph;
-		this.maxDepth = maxDepth;
+				   Integer maxDepth){
+		super(targetGraph, subjectGraph, srcGraph, dstGraph, maxDepth);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		QuickstepExecutor qs = (QuickstepExecutor) ctx.getExecutor();
-
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
 
-		qs.executeQuery("DROP TABLE m_cur;\n" +
+		storage.executeQuery("DROP TABLE m_cur;\n" +
 				"DROP TABLE m_next;\n" +
 				"DROP TABLE m_answer;\n" +
 				"CREATE TABLE m_cur (id INT);\n" +
@@ -82,10 +62,10 @@ public class GetPath extends Instruction
 		}
 
 		// Create subgraph edges table.
-		qs.executeQuery("DROP TABLE m_sgconn;\n" +
+		storage.executeQuery("DROP TABLE m_sgconn;\n" +
 				"CREATE TABLE m_sgconn (src INT, dst INT, depth INT);");
 
-		qs.executeQuery("INSERT INTO m_cur SELECT id FROM " + dstGraph.getVertexTableName() + ";\n" +
+		storage.executeQuery("INSERT INTO m_cur SELECT id FROM " + destinationGraph.getVertexTableName() + ";\n" +
 				"INSERT INTO m_answer SELECT id FROM m_cur;\n" +
 				"\\analyzerange edge\n");
 
@@ -102,25 +82,25 @@ public class GetPath extends Instruction
 						"INSERT INTO m_answer SELECT id FROM m_cur;";
 		for(int i = 0; i < maxDepth; ++i)
 		{
-			qs.executeQuery(loopStmts.replace("$depth", String.valueOf(i + 1)));
+			storage.executeQuery(loopStmts.replace("$depth", String.valueOf(i + 1)));
 
 			String worksetSizeQuery = "COPY SELECT COUNT(*) FROM m_cur TO stdout;";
-			if(qs.executeQueryForLongResult(worksetSizeQuery) == 0)
+			if(storage.executeQueryForLongResult(worksetSizeQuery) == 0)
 			{
 				break;
 			}
 		}
 
-		qs.executeQuery("DROP TABLE m_cur;\n" +
+		storage.executeQuery("DROP TABLE m_cur;\n" +
 				"DROP TABLE m_next;\n" +
 				"CREATE TABLE m_cur (id INT);\n" +
 				"CREATE TABLE m_next (id INT);");
 
-		qs.executeQuery("\\analyzerange m_answer\n" +
-				"INSERT INTO m_cur SELECT id FROM " + srcGraph.getVertexTableName() +
+		storage.executeQuery("\\analyzerange m_answer\n" +
+				"INSERT INTO m_cur SELECT id FROM " + sourceGraph.getVertexTableName() +
 				" WHERE id IN (SELECT id FROM m_answer);\n");
 
-		qs.executeQuery("DROP TABLE m_answer;\n" +
+		storage.executeQuery("DROP TABLE m_answer;\n" +
 				"CREATE TABLE m_answer (id INT);\n" +
 				"INSERT INTO m_answer SELECT id FROM m_cur;" +
 				"\\analyzerange m_answer m_sgconn\n");
@@ -141,48 +121,21 @@ public class GetPath extends Instruction
 						"INSERT INTO m_answer SELECT id FROM m_cur;";
 		for(int i = 0; i < maxDepth; ++i)
 		{
-			qs.executeQuery(loopStmts.replace("$depth", String.valueOf(i)));
+			storage.executeQuery(loopStmts.replace("$depth", String.valueOf(i)));
 
 			String worksetSizeQuery = "COPY SELECT COUNT(*) FROM m_cur TO stdout;";
-			if(qs.executeQueryForLongResult(worksetSizeQuery) == 0)
+			if(storage.executeQueryForLongResult(worksetSizeQuery) == 0)
 			{
 				break;
 			}
 		}
 
-		qs.executeQuery("\\analyzerange m_answer\n" +
+		storage.executeQuery("\\analyzerange m_answer\n" +
 				"INSERT INTO " + targetVertexTable + " SELECT id FROM m_answer;");
 
-		qs.executeQuery("DROP TABLE m_cur;\n" +
+		storage.executeQuery("DROP TABLE m_cur;\n" +
 				"DROP TABLE m_next;\n" +
 				"DROP TABLE m_answer;\n" +
 				"DROP TABLE m_sgconn;");
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "GetPath";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("srcGraph");
-		inline_field_values.add(srcGraph.getName());
-		inline_field_names.add("dstGraph");
-		inline_field_values.add(dstGraph.getName());
-		inline_field_names.add("maxDepth");
-		inline_field_values.add(String.valueOf(maxDepth));
 	}
 }

@@ -19,52 +19,29 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
-import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-
-import java.util.ArrayList;
 import java.util.List;
+
+import spade.query.quickgrail.core.execution.AbstractEraseSymbols;
+import spade.query.quickgrail.core.kernel.ExecutionContext;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
+import spade.storage.Neo4j;
 
 /**
  * Remove the specified graphs stored in QuickGrail.
  */
-public class EraseSymbols extends Instruction
-{
-	// The graph variable names to be erased.
-	private List<String> symbols;
-
-	public EraseSymbols(List<String> symbols)
-	{
-		this.symbols = symbols;
+public class EraseSymbols
+	extends AbstractEraseSymbols<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
+	
+	public EraseSymbols(List<String> symbols){
+		super(symbols);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		for(String symbol : this.symbols)
-		{
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){
+		for(String symbol : getSymbols()){
 			env.eraseSymbol(symbol);
 		}
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "EraseSymbols";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("symbols");
-		inline_field_values.add(String.join(",", this.symbols));
 	}
 }

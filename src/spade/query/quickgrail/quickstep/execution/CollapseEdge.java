@@ -19,84 +19,52 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
-import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
-import spade.storage.quickstep.QuickstepExecutor;
-
 import java.util.ArrayList;
+
+import spade.query.quickgrail.core.execution.AbstractCollapseEdge;
+import spade.query.quickgrail.core.kernel.ExecutionContext;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
+import spade.storage.Quickstep;
 
 /**
  * Collapse all edges whose specified fields are the same.
  */
-public class CollapseEdge extends Instruction
-{
-	// Input graph.
-	private QuickstepGraph targetGraph;
-	// Output graph.
-	private QuickstepGraph sourceGraph;
-	// Fields to check.
-	private ArrayList<String> fields;
+public class CollapseEdge
+	extends AbstractCollapseEdge<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
 
-	public CollapseEdge(QuickstepGraph targetGraph, QuickstepGraph sourceGraph, ArrayList<String> fields)
-	{
-		this.targetGraph = targetGraph;
-		this.sourceGraph = sourceGraph;
-		this.fields = fields;
+	public CollapseEdge(QuickstepGraph targetGraph, QuickstepGraph sourceGraph, ArrayList<String> fields){
+		super(targetGraph, sourceGraph, fields);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
 		String sourceVertexTable = sourceGraph.getVertexTableName();
 		String sourceEdgeTable = sourceGraph.getEdgeTableName();
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
 
-		QuickstepExecutor qs = (QuickstepExecutor) ctx.getExecutor();
-		qs.executeQuery("\\analyzerange " + sourceVertexTable + " " + sourceEdgeTable + "\n");
-		qs.executeQuery("INSERT INTO " + targetVertexTable +
+		storage.executeQuery("\\analyzerange " + sourceVertexTable + " " + sourceEdgeTable + "\n");
+		storage.executeQuery("INSERT INTO " + targetVertexTable +
 				" SELECT id FROM " + sourceVertexTable + ";");
 
 		StringBuilder tables = new StringBuilder();
 		StringBuilder predicates = new StringBuilder();
 		StringBuilder groups = new StringBuilder();
 
-		for(int i = 0; i < fields.size(); ++i)
+		for(int i = 0; i < getFields().size(); ++i)
 		{
 			String edgeAnnoName = "ea" + i;
 			tables.append(", edge_anno " + edgeAnnoName);
 			predicates.append(" AND e.id = " + edgeAnnoName + ".id" +
-					" AND " + edgeAnnoName + ".field = '" + fields.get(i) + "'");
+					" AND " + edgeAnnoName + ".field = '" + getFields().get(i) + "'");
 			groups.append(", " + edgeAnnoName + ".value");
 		}
 
-		qs.executeQuery("INSERT INTO " + targetEdgeTable +
+		storage.executeQuery("INSERT INTO " + targetEdgeTable +
 				" SELECT MIN(e.id) FROM edge e" + tables.toString() +
 				" WHERE e.id IN (SELECT id FROM " + sourceEdgeTable + ")" + predicates.toString() +
 				" GROUP BY src, dst" + groups.toString() + ";");
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "CollapseEdge";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("sourceGraph");
-		inline_field_values.add(sourceGraph.getName());
 	}
 }

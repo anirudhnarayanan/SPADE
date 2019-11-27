@@ -19,52 +19,29 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
-import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-
-import java.util.ArrayList;
 import java.util.List;
+
+import spade.query.quickgrail.core.execution.AbstractEraseSymbols;
+import spade.query.quickgrail.core.kernel.ExecutionContext;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
 
 /**
  * Remove the specified graphs stored in QuickGrail.
  */
-public class EraseSymbols extends Instruction
-{
-	// The graph variable names to be erased.
-	private List<String> symbols;
-
-	public EraseSymbols(List<String> symbols)
-	{
-		this.symbols = symbols;
+public class EraseSymbols
+	extends AbstractEraseSymbols<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
+	
+	public EraseSymbols(List<String> symbols){
+		super(symbols);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		for(String symbol : this.symbols)
-		{
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
+		for(String symbol : getSymbols()){
 			env.eraseSymbol(symbol);
 		}
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "EraseSymbols";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("symbols");
-		inline_field_values.add(String.join(",", this.symbols));
 	}
 }

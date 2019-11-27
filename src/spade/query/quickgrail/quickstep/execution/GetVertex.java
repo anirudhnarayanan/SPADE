@@ -19,43 +19,28 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import static spade.query.quickgrail.quickstep.core.QuickstepUtil.formatString;
+
+import spade.query.quickgrail.core.execution.AbstractGetVertex;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
 import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
-import spade.storage.quickstep.QuickstepExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.quickstep.utility.QuickstepUtil.formatString;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
+import spade.storage.Quickstep;
 
 /**
  * Get the a set of vertices in a graph.
  */
-public class GetVertex extends Instruction
-{
-	// Output graph.
-	private QuickstepGraph targetGraph;
-	// Input graph.
-	private QuickstepGraph subjectGraph;
-	private String field;
-	private String operation;
-	private String value;
-
-	public GetVertex(QuickstepGraph targetGraph, QuickstepGraph subjectGraph, String field, String operation, String value)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.field = field;
-		this.operation = operation;
-		this.value = value;
+public class GetVertex
+	extends AbstractGetVertex<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
+	
+	public GetVertex(QuickstepGraph targetGraph, QuickstepGraph subjectGraph, 
+			String field, String operation, String value){
+		super(targetGraph, subjectGraph, field, operation, value);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		QuickstepExecutor qs = (QuickstepExecutor) ctx.getExecutor();
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
 		StringBuilder sqlQuery = new StringBuilder(100);
 		sqlQuery.append("INSERT INTO " + targetGraph.getVertexTableName() +
 				" SELECT id FROM " + QuickstepGraph.GetBaseVertexAnnotationTableName());
@@ -75,35 +60,6 @@ public class GetVertex extends Instruction
 			}
 		}
 		sqlQuery.append(" GROUP BY id;");
-		qs.executeQuery(sqlQuery.toString());
+		storage.executeQuery(sqlQuery.toString());
 	}
-
-	@Override
-	public String getLabel()
-	{
-		return "GetVertex";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("field");
-		inline_field_values.add(field);
-		inline_field_names.add("operation");
-		inline_field_values.add(operation);
-		inline_field_names.add("value");
-		inline_field_values.add(value);
-
-	}
-
 }

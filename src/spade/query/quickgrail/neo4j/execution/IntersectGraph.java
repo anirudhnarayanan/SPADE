@@ -19,43 +19,32 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.EDGE_ALIAS;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.NodeTypes.VERTEX;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.RelationshipTypes.EDGE;
+import static spade.query.quickgrail.neo4j.core.Neo4jStorageHelper.formatSymbol;
+
+import spade.query.quickgrail.core.execution.AbstractIntersectGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
+import spade.query.quickgrail.neo4j.core.Neo4jStorageHelper;
 import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
-import spade.query.quickgrail.neo4j.utility.Neo4jUtil;
-import spade.storage.neo4j.Neo4jExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.EDGE_ALIAS;
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.NodeTypes.VERTEX;
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.RelationshipTypes.EDGE;
-import static spade.query.quickgrail.neo4j.utility.Neo4jUtil.formatSymbol;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
+import spade.storage.Neo4j;
 
 /**
  * Intersect two graphs (i.e. find common vertices and edges).
  */
 
-public class IntersectGraph extends Instruction
-{
-	// Output graph.
-	private Neo4jGraph outputGraph;
-	// Input graphs.
-	private Neo4jGraph lhsGraph;
-	private Neo4jGraph rhsGraph;
+public class IntersectGraph
+	extends AbstractIntersectGraph<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
 
-	public IntersectGraph(Neo4jGraph outputGraph, Neo4jGraph lhsGraph, Neo4jGraph rhsGraph)
-	{
-		this.outputGraph = outputGraph;
-		this.lhsGraph = lhsGraph;
-		this.rhsGraph = rhsGraph;
+	public IntersectGraph(Neo4jGraph outputGraph, Neo4jGraph lhsGraph, Neo4jGraph rhsGraph){
+		super(outputGraph, lhsGraph, rhsGraph);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){
 		String outputVertexTable = outputGraph.getVertexTableName();
 		String outputEdgeTable = outputGraph.getEdgeTableName();
 		String lhsVertexTable = lhsGraph.getVertexTableName();
@@ -63,9 +52,8 @@ public class IntersectGraph extends Instruction
 		String rhsVertexTable = rhsGraph.getVertexTableName();
 		String rhsEdgeTable = rhsGraph.getEdgeTableName();
 
-		Neo4jExecutor ns = (Neo4jExecutor) ctx.getExecutor();
 		String condition = "x:" + lhsVertexTable + ":" + rhsVertexTable;
-		String cypherQuery = Neo4jUtil.vertexLabelQuery(condition, VERTEX.toString(), outputVertexTable);
+		String cypherQuery = Neo4jStorageHelper.vertexLabelQuery(condition, VERTEX.toString(), outputVertexTable);
 
 		// allows execution of multiple queries in one statement
 		cypherQuery += " WITH count(*) as dummy \n";
@@ -86,31 +74,9 @@ public class IntersectGraph extends Instruction
 			}
 			condition += " x.quickgrail_symbol CONTAINS " + formatSymbol(rhsEdgeTable);
 		}
-		cypherQuery += Neo4jUtil.edgeSymbolQuery(condition, outputEdgeTable);
+		cypherQuery += Neo4jStorageHelper.edgeSymbolQuery(condition, outputEdgeTable);
 
-		ns.executeQuery(cypherQuery);
+		storage.executeQuery(cypherQuery);
 	}
 
-	@Override
-	public String getLabel()
-	{
-		return "IntersectGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("outputGraph");
-		inline_field_values.add(outputGraph.getName());
-		inline_field_names.add("lhsGraph");
-		inline_field_values.add(lhsGraph.getName());
-		inline_field_names.add("rhsGraph");
-		inline_field_values.add(rhsGraph.getName());
-	}
 }

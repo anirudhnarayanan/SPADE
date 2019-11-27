@@ -19,8 +19,6 @@
  */
 package spade.storage.quickstep;
 
-import spade.query.quickgrail.core.utility.StorageExecutor;
-
 import java.io.IOException;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -36,7 +34,7 @@ import java.util.logging.Logger;
 /**
  * Helper class for encapsulation of related methods and asynchronous execution.
  */
-public class QuickstepExecutor extends StorageExecutor
+public class QuickstepExecutor
 {
     private QuickstepClient client;
     private ExecutorService queryExecutor;

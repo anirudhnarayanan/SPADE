@@ -20,86 +20,63 @@
 package spade.query.quickgrail.postgresql.execution;
 
 import spade.query.quickgrail.core.entities.Graph.EdgeComponent;
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractGetEdgeEndpoint;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
 import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.storage.postgresql.PostgresExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.CHILD_VERTEX_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.EDGE_TABLE;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PARENT_VERTEX_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PRIMARY_KEY;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
+import spade.storage.PostgreSQLSchema;
 
 /**
  * Get end points of all edges in a graph.
  */
-public class GetEdgeEndpoint extends Instruction
-{
-	// Output graph.
-	private PostgreSQLGraph targetGraph;
-	// Input graph.
-	private PostgreSQLGraph subjectGraph;
-	// End-point component (source / destination, or both)
-	private EdgeComponent component;
-
-	public GetEdgeEndpoint(PostgreSQLGraph targetGraph, PostgreSQLGraph subjectGraph, EdgeComponent component)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.component = component;
+public class GetEdgeEndpoint
+	extends AbstractGetEdgeEndpoint<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
+	
+	public GetEdgeEndpoint(PostgreSQLGraph targetGraph, PostgreSQLGraph subjectGraph, EdgeComponent component){
+		super(targetGraph, subjectGraph, component);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		PostgresExecutor qs = (PostgresExecutor) ctx.getExecutor();
-
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
+		PostgreSQLSchema schema = storage.getSchema();
+		
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String subjectEdgeTable = subjectGraph.getEdgeTableName();
 
-		qs.executeQuery("DROP TABLE IF EXISTS m_answer;" +
-				"CREATE TABLE m_answer (" + PRIMARY_KEY + " UUID);");
+		String mAnswerTableName = "m_answer";
+		
+		storage.executeQuery(schema.queriesDropAndCreateHashOnlyTable(mAnswerTableName));
 
-		if(component == EdgeComponent.kSource || component == EdgeComponent.kBoth)
-		{
-			qs.executeQuery("INSERT INTO m_answer SELECT \"" + CHILD_VERTEX_KEY + "\" FROM " + EDGE_TABLE +
-					" WHERE " + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " + subjectEdgeTable + ");");
+		String columnNames[] = null;
+		
+		if(component == EdgeComponent.kBoth){
+			columnNames = new String[]{schema.childVertexHashColumnName, schema.parentVertexHashColumnName};
+		}else{
+			if(component == EdgeComponent.kSource){
+				columnNames = new String[]{schema.childVertexHashColumnName};
+			}else if(component == EdgeComponent.kDestination){
+				columnNames = new String[]{schema.parentVertexHashColumnName};
+			}else{
+				throw new RuntimeException("Unknown component type: " + component);
+			}
+		}
+		
+		for(String columnName : columnNames){
+			storage.executeCopy("insert into " + schema.formatTableNameForQuery(mAnswerTableName) + 
+					" select " + schema.formatColumnNameForQuery(columnName) + 
+					" from " + schema.formatTableNameForQuery(schema.mainEdgeTableName) + 
+					" where " + schema.formatColumnNameForQuery(schema.hashColumnName) + " in " + 
+					"(select " + schema.formatColumnNameForQuery(schema.hashColumnName) + " from " +
+					schema.formatTableNameForQuery(subjectEdgeTable) + ");");
 		}
 
-		if(component == EdgeComponent.kDestination || component == EdgeComponent.kBoth)
-		{
-			qs.executeQuery("INSERT INTO m_answer SELECT \"" + PARENT_VERTEX_KEY + "\" FROM " + EDGE_TABLE +
-					" WHERE " + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " + subjectEdgeTable + ");");
-		}
-
-		qs.executeQuery("INSERT INTO " + targetVertexTable + " SELECT " + PRIMARY_KEY + " FROM m_answer GROUP BY " +
-				PRIMARY_KEY + ";" + "DROP TABLE IF EXISTS m_answer;");
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "GetEdgeEndpoint";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("component");
-		inline_field_values.add(component.name().substring(1));
+		storage.executeQuery(
+				"insert into " + schema.formatTableNameForQuery(targetVertexTable) + 
+				" select " + schema.formatColumnNameForQuery(schema.hashColumnName) + " from " +
+				schema.formatTableNameForQuery(mAnswerTableName) + " group by " +
+				schema.formatColumnNameForQuery(schema.hashColumnName) + ";" + 
+				schema.queryDropTableIfExists(mAnswerTableName));
 	}
 }

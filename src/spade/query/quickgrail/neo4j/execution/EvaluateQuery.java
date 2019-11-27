@@ -19,48 +19,27 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractEvaluateQuery;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-
-import java.util.ArrayList;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
+import spade.storage.Neo4j;
 
 /**
  * Evaluate an arbitrary Cypher query that has not return value
  * (that is supported by Neo4j).
  */
-public class EvaluateQuery extends Instruction
-{
-	private String cypherQuery;
+public class EvaluateQuery
+	extends AbstractEvaluateQuery<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
 
-	public EvaluateQuery(String sqlQuery)
-	{
-		this.cypherQuery = sqlQuery;
+	public EvaluateQuery(String query){
+		super(query);
 	}
 
 	@Override
-	public String getLabel()
-	{
-		return "EvaluateQuery";
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){
+		storage.executeQuery(query);
 	}
 
-	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		ctx.getExecutor().executeQuery(cypherQuery);
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("cypherQuery");
-		inline_field_values.add(cypherQuery);
-	}
 }

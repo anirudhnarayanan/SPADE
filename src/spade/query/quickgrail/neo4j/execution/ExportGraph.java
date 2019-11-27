@@ -19,54 +19,46 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
-import spade.core.AbstractEdge;
-import spade.core.AbstractVertex;
-import spade.query.quickgrail.core.entities.Graph.ExportFormat;
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
-import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
-import spade.query.quickgrail.neo4j.utility.Neo4jUtil;
-import spade.storage.neo4j.Neo4jExecutor;
+import static spade.query.quickgrail.core.entities.Graph.kNonForceDumpLimit;
+import static spade.query.quickgrail.core.entities.Graph.kNonForceVisualizeLimit;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.EDGE_ALIAS;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.VERTEX_ALIAS;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.RelationshipTypes.EDGE;
 
-import java.util.ArrayList;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static spade.query.quickgrail.core.entities.Graph.kNonForceDumpLimit;
-import static spade.query.quickgrail.core.entities.Graph.kNonForceVisualizeLimit;
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.EDGE_ALIAS;
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.RelationshipTypes.EDGE;
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.VERTEX_ALIAS;
+import spade.core.AbstractEdge;
+import spade.core.AbstractVertex;
+import spade.query.quickgrail.core.entities.Graph.ExportFormat;
+import spade.query.quickgrail.core.execution.AbstractExportGraph;
+import spade.query.quickgrail.core.kernel.ExecutionContext;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
+import spade.query.quickgrail.neo4j.core.Neo4jStorageHelper;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
+import spade.storage.Neo4j;
 
 /**
  * Export a QuickGrail graph to spade.core.Graph.
  */
-public class ExportGraph extends Instruction
-{
-	private Neo4jGraph targetGraph;
-	private ExportFormat format;
-	private boolean force;
+public class ExportGraph
+	extends AbstractExportGraph<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
+	
 	private static final Logger logger = Logger.getLogger(ExportGraph.class.getName());
 
-	public ExportGraph(Neo4jGraph targetGraph, ExportFormat format, boolean force)
-	{
-		this.targetGraph = targetGraph;
-		this.format = format;
-		this.force = force;
+	public ExportGraph(Neo4jGraph targetGraph, ExportFormat format, boolean force){
+		super(targetGraph, format, force);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		Neo4jExecutor ns = (Neo4jExecutor) ctx.getExecutor();
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
-		long numVertices = Neo4jUtil.GetNumVertices(ns, targetVertexTable);
-		long numEdges = Neo4jUtil.GetNumEdges(ns, targetEdgeTable);
+		long numVertices = Neo4jStorageHelper.GetNumVertices(storage, targetVertexTable);
+		long numEdges = Neo4jStorageHelper.GetNumEdges(storage, targetEdgeTable);
 		long graphsize = numVertices + numEdges;
 
 		if(!force)
@@ -91,7 +83,7 @@ public class ExportGraph extends Instruction
 		if(numVertices > 0)
 		{
 			String vertexQuery = "MATCH (" + VERTEX_ALIAS + ":" + targetVertexTable + ") RETURN " + VERTEX_ALIAS;
-			Map<String, AbstractVertex> vertices = Neo4jUtil.prepareVertexMapFromNeo4jResult(ns, vertexQuery);
+			Map<String, AbstractVertex> vertices = Neo4jStorageHelper.prepareVertexMapFromNeo4jResult(storage, vertexQuery);
 
 			String edgeQuery;
 			if(env.IsBaseGraph(targetGraph))
@@ -104,7 +96,7 @@ public class ExportGraph extends Instruction
 						" WHERE " + EDGE_ALIAS + ".quickgrail_symbol CONTAINS '," + targetEdgeTable + ",' " +
 						" RETURN " + EDGE_ALIAS;
 			}
-			Set<AbstractEdge> edges = Neo4jUtil.prepareEdgeSetFromNeo4jResult(ns, edgeQuery, vertices);
+			Set<AbstractEdge> edges = Neo4jStorageHelper.prepareEdgeSetFromNeo4jResult(storage, edgeQuery, vertices);
 			logger.log(Level.INFO, "vertices: " + vertices.values());
 			logger.log(Level.INFO, "edges: " + edges);
 			resultGraph.vertexSet().addAll(vertices.values());
@@ -120,27 +112,5 @@ public class ExportGraph extends Instruction
 			ctx.addResponse(resultGraph.exportGraph());
 		}
 	}
-
-	@Override
-	public String getLabel()
-	{
-		return "ExportGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("format");
-		inline_field_values.add(format.name());
-		inline_field_names.add("force");
-		inline_field_values.add(String.valueOf(force));
-	}
+	
 }

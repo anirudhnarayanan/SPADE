@@ -19,62 +19,33 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
-import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
-import spade.storage.quickstep.QuickstepExecutor;
-
 import java.util.ArrayList;
+
+import spade.query.quickgrail.core.execution.AbstractInsertLiteralVertex;
+import spade.query.quickgrail.core.kernel.ExecutionContext;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
+import spade.storage.Quickstep;
 
 /**
  * Insert a list of vertices into a graph by ID.
  */
-public class InsertLiteralVertex extends Instruction
-{
-	// The target graph to insert the vertices.
-	private QuickstepGraph targetGraph;
-	// Edge IDs to be inserted.
-	private ArrayList<String> vertices;
+public class InsertLiteralVertex
+	extends AbstractInsertLiteralVertex<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
 
-	public InsertLiteralVertex(QuickstepGraph targetGraph, ArrayList<String> vertices)
-	{
-		this.targetGraph = targetGraph;
-		this.vertices = vertices;
+	public InsertLiteralVertex(QuickstepGraph targetGraph, ArrayList<String> vertices){
+		super(targetGraph, vertices);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		QuickstepExecutor qs = (QuickstepExecutor) ctx.getExecutor();
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
 		String prefix = "INSERT INTO " + targetGraph.getVertexTableName() + " VALUES(";
 		StringBuilder sqlQuery = new StringBuilder();
-		for(String vertex : vertices)
+		for(String vertex : getVertices())
 		{
 			sqlQuery.append(prefix + vertex + ");\n");
 		}
-		qs.executeQuery(sqlQuery.toString());
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "InsertLiteralVertex";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("vertices");
-		inline_field_values.add("{" + String.join(",", vertices) + "}");
+		storage.executeQuery(sqlQuery.toString());
 	}
 }

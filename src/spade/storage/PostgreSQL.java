@@ -19,13 +19,8 @@
  */
 package spade.storage;
 
-import com.mysql.jdbc.StringUtils;
-import org.postgresql.PGConnection;
-import org.postgresql.copy.PGCopyInputStream;
-import org.postgresql.core.BaseConnection;
-import spade.core.AbstractEdge;
-import spade.core.AbstractVertex;
-import spade.core.Cache;
+import static spade.core.Kernel.CONFIG_PATH;
+import static spade.core.Kernel.FILE_SEPARATOR;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -44,10 +39,20 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static spade.core.Kernel.CONFIG_PATH;
-import static spade.core.Kernel.FILE_SEPARATOR;
+import org.postgresql.PGConnection;
+import org.postgresql.copy.PGCopyInputStream;
+
+import com.mysql.jdbc.StringUtils;
 
 import au.com.bytecode.opencsv.CSVWriter;
+import spade.core.AbstractEdge;
+import spade.core.AbstractVertex;
+import spade.core.Cache;
+import spade.query.quickgrail.core.kernel.QuickGrailExecutor;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
+import spade.query.quickgrail.postgresql.core.PostgreSQLResolver;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
 import spade.utility.CommonFunctions;
 
 /**
@@ -72,8 +77,8 @@ public class PostgreSQL extends SQL
     private boolean buildSecondaryIndexes = false;
     private List<Map<String, String>> edgeList = new ArrayList<>();
     private List<Map<String, String>> vertexList = new ArrayList<>();
-    private ArrayList<String> edgeColumnNames = new ArrayList<>();
-    private ArrayList<String> vertexColumnNames = new ArrayList<>();
+    private final ArrayList<String> edgeColumnNames = new ArrayList<>();
+    private final ArrayList<String> vertexColumnNames = new ArrayList<>();
 
     private String TRACE_BASE_VERTEX = "trace_base_vertex";
     private String TRACE_BASE_EDGE = "trace_base_edge";
@@ -828,6 +833,32 @@ public class PostgreSQL extends SQL
         }
         return result;
     }
+    
+    // never null
+    public long getRowCountOfTableSafe(String rawTableName){
+        Long count = -1L;
+        try{
+            globalTxCheckin(true);
+            Statement queryStatement = dbConnection.createStatement();
+            if(CURSOR_FETCH_SIZE > 0)
+                queryStatement.setFetchSize(CURSOR_FETCH_SIZE);
+            boolean resultExists = queryStatement.execute(getSchema().queryGetRowCount(rawTableName));
+            if(resultExists){
+            	count = 0L;
+            	ResultSet result = queryStatement.getResultSet();
+            	while(result.next()){
+            		count = result.getLong(1);
+            	}
+            }else{
+            	count = 0L;
+            }
+            globalTxCheckin(true);
+        }catch(Exception ex){
+            logger.log(Level.SEVERE, "PostgreSQL query execution not successful!", ex);
+            count = -1L;
+        }
+        return count;
+    }
 
     public String executeCopy(String query)
     {
@@ -855,5 +886,47 @@ public class PostgreSQL extends SQL
             logger.log(Level.SEVERE, "Error reading from PostgreSQL copy input stream!", ex);
         }
         return null;
+    }
+    
+    private QuickGrailExecutor
+    	<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL> 
+    	executor = null;
+    
+    @SuppressWarnings("unchecked")
+	public synchronized
+		QuickGrailExecutor<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL> 
+		getExecutor() throws Exception{
+    	if(executor == null){
+    		executor = new QuickGrailExecutor
+    				<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>
+    				(this, new PostgreSQLResolver(), new PostgreSQLEnvironment(this));
+    	}
+    	return executor;
+	}
+    
+    private PostgreSQLSchema postgreSQLSchema = null;
+    
+    public synchronized PostgreSQLSchema getSchema(){
+    	if(postgreSQLSchema == null){
+    		postgreSQLSchema = new PostgreSQLSchema(vertexColumnNames, edgeColumnNames);
+    	}
+    	return postgreSQLSchema;
+    }
+
+    /**
+     * Submit a query and cast result as long type.
+     */
+    public long executeQueryForLongResult(String query)
+    {
+		String resultStr = executeCopy(query);
+        try
+        {
+            return Long.parseLong(resultStr);
+        }
+		catch(Exception ex)
+        {
+            throw new RuntimeException(
+					"Unexpected result \"" + resultStr + "\" from Postgres: expecting a long value");
+		}
     }
 }

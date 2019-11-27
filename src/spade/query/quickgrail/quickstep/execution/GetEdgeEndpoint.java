@@ -20,83 +20,46 @@
 package spade.query.quickgrail.quickstep.execution;
 
 import spade.query.quickgrail.core.entities.Graph.EdgeComponent;
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractGetEdgeEndpoint;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
 import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
-import spade.storage.quickstep.QuickstepExecutor;
-
-import java.util.ArrayList;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
+import spade.storage.Quickstep;
 
 /**
  * Get end points of all edges in a graph.
  */
-public class GetEdgeEndpoint extends Instruction
-{
-	// Output graph.
-	private QuickstepGraph targetGraph;
-	// Input graph.
-	private QuickstepGraph subjectGraph;
-	// End-point component (source / destination, or both)
-	private EdgeComponent component;
-
-	public GetEdgeEndpoint(QuickstepGraph targetGraph, QuickstepGraph subjectGraph, EdgeComponent component)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.component = component;
+public class GetEdgeEndpoint
+	extends AbstractGetEdgeEndpoint<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
+	
+	public GetEdgeEndpoint(QuickstepGraph targetGraph, QuickstepGraph subjectGraph, EdgeComponent component){
+		super(targetGraph, subjectGraph, component);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		QuickstepExecutor qs = (QuickstepExecutor) ctx.getExecutor();
-
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String subjectEdgeTable = subjectGraph.getEdgeTableName();
 
-		qs.executeQuery("DROP TABLE m_answer;\n" +
+		storage.executeQuery("DROP TABLE m_answer;\n" +
 				"CREATE TABLE m_answer (id INT);\n" +
 				"\\analyzerange " + subjectEdgeTable + "\n");
 
 		if(component == EdgeComponent.kSource || component == EdgeComponent.kBoth)
 		{
-			qs.executeQuery("INSERT INTO m_answer SELECT src FROM edge" +
+			storage.executeQuery("INSERT INTO m_answer SELECT src FROM edge" +
 					" WHERE id IN (SELECT id FROM " + subjectEdgeTable + ");");
 		}
 
 		if(component == EdgeComponent.kDestination || component == EdgeComponent.kBoth)
 		{
-			qs.executeQuery("INSERT INTO m_answer SELECT dst FROM edge" +
+			storage.executeQuery("INSERT INTO m_answer SELECT dst FROM edge" +
 					" WHERE id IN (SELECT id FROM " + subjectEdgeTable + ");");
 		}
 
-		qs.executeQuery("\\analyzerange m_answer\n" +
+		storage.executeQuery("\\analyzerange m_answer\n" +
 				"INSERT INTO " + targetVertexTable + " SELECT id FROM m_answer GROUP BY id;\n" +
 				"DROP TABLE m_answer;");
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "GetEdgeEndpoint";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("component");
-		inline_field_values.add(component.name().substring(1));
 	}
 }

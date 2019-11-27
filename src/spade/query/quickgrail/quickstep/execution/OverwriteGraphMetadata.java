@@ -19,38 +19,27 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractOverwriteGraphMetadata;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
 import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
-import spade.storage.quickstep.QuickstepExecutor;
-
-import java.util.ArrayList;
+import spade.storage.Quickstep;
 
 /**
  * This class is not yet used in the SPADE integrated QuickGrail.
  */
-public class OverwriteGraphMetadata extends Instruction
-{
-	private QuickstepGraphMetadata targetMetadata;
-	private QuickstepGraphMetadata lhsMetadata;
-	private QuickstepGraphMetadata rhsMetadata;
+public class OverwriteGraphMetadata
+	extends AbstractOverwriteGraphMetadata<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
 
 	public OverwriteGraphMetadata(QuickstepGraphMetadata targetMetadata,
 								  QuickstepGraphMetadata lhsMetadata,
-								  QuickstepGraphMetadata rhsMetadata)
-	{
-		this.targetMetadata = targetMetadata;
-		this.lhsMetadata = lhsMetadata;
-		this.rhsMetadata = rhsMetadata;
+								  QuickstepGraphMetadata rhsMetadata){
+		super(targetMetadata, lhsMetadata, rhsMetadata);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		QuickstepExecutor qs = (QuickstepExecutor) ctx.getExecutor();
-
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
 		String targetVertexTable = targetMetadata.getVertexTableName();
 		String targetEdgeTable = targetMetadata.getEdgeTableName();
 		String lhsVertexTable = lhsMetadata.getVertexTableName();
@@ -58,7 +47,7 @@ public class OverwriteGraphMetadata extends Instruction
 		String rhsVertexTable = rhsMetadata.getVertexTableName();
 		String rhsEdgeTable = rhsMetadata.getEdgeTableName();
 
-		qs.executeQuery("\\analyzerange " + rhsVertexTable + " " + rhsEdgeTable + "\n" +
+		storage.executeQuery("\\analyzerange " + rhsVertexTable + " " + rhsEdgeTable + "\n" +
 				"INSERT INTO " + targetVertexTable +
 				" SELECT id, name, value FROM " + lhsVertexTable + " l" +
 				" WHERE NOT EXISTS (SELECT * FROM " + rhsVertexTable + " r" +
@@ -71,28 +60,5 @@ public class OverwriteGraphMetadata extends Instruction
 				" SELECT id, name, value FROM " + rhsVertexTable + ";\n" +
 				"INSERT INTO " + targetEdgeTable +
 				" SELECT id, name, value FROM " + rhsEdgeTable + ";");
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "OverwritehGraphMetadata";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetMetadata");
-		inline_field_values.add(targetMetadata.getName());
-		inline_field_names.add("lhsMetadata");
-		inline_field_values.add(lhsMetadata.getName());
-		inline_field_names.add("rhsMetadata");
-		inline_field_values.add(rhsMetadata.getName());
 	}
 }

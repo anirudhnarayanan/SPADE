@@ -19,59 +19,33 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractStatGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
 import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
-import spade.storage.quickstep.QuickstepExecutor;
-
-import java.util.ArrayList;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
+import spade.storage.Quickstep;
 
 /**
  * Show statistics of a graph.
  */
-public class StatGraph extends Instruction
-{
-	private QuickstepGraph targetGraph;
-
-	public StatGraph(QuickstepGraph targetGraph)
-	{
-		this.targetGraph = targetGraph;
+public class StatGraph
+	extends AbstractStatGraph<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
+	
+	public StatGraph(QuickstepGraph targetGraph){
+		super(targetGraph);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		QuickstepExecutor qs = (QuickstepExecutor) ctx.getExecutor();
-
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
-		long numVertices = qs.executeQueryForLongResult(
+		long numVertices = storage.executeQueryForLongResult(
 				"COPY SELECT COUNT(*) FROM " + targetVertexTable + " TO stdout;");
-		long numEdges = qs.executeQueryForLongResult(
+		long numEdges = storage.executeQueryForLongResult(
 				"COPY SELECT COUNT(*) FROM " + targetEdgeTable + " TO stdout;");
 
 		String stat = "# vertices = " + numVertices + ", # edges = " + numEdges;
 		ctx.addResponse(stat);
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "StatGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
 	}
 }

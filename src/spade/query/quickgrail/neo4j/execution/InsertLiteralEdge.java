@@ -19,55 +19,27 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
-import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
-
 import java.util.ArrayList;
+
+import spade.query.quickgrail.core.execution.AbstractInsertLiteralEdge;
+import spade.query.quickgrail.core.kernel.ExecutionContext;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
+import spade.storage.Neo4j;
 
 /**
  * NOT SUPPORTED BY NEO4J
  * TODO: Support execution of general cypher query
  * Insert a list of edges into a graph by hash.
  */
-public class InsertLiteralEdge extends Instruction
-{
-	// The target graph to insert the edges.
-	private Neo4jGraph targetGraph;
-	// Edge hashes to be inserted.
-	private ArrayList<String> edges;
+public class InsertLiteralEdge
+	extends AbstractInsertLiteralEdge<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
 
-	public InsertLiteralEdge(Neo4jGraph targetGraph, ArrayList<String> edges)
-	{
-		this.targetGraph = targetGraph;
-		this.edges = edges;
+	public InsertLiteralEdge(Neo4jGraph targetGraph, ArrayList<String> edges){
+		super(targetGraph, edges);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "InsertLiteralEdge";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("edges");
-		inline_field_values.add("{" + String.join(",", edges) + "}");
-	}
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){}
 }

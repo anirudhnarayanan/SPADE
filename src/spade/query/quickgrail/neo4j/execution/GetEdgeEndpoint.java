@@ -19,42 +19,29 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
+import static spade.query.quickgrail.neo4j.core.CommonVariables.EDGE_ALIAS;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.RelationshipTypes.EDGE;
+
 import spade.query.quickgrail.core.entities.Graph.EdgeComponent;
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractGetEdgeEndpoint;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
 import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
-import spade.storage.neo4j.Neo4jExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.EDGE_ALIAS;
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.RelationshipTypes.EDGE;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
+import spade.storage.Neo4j;
 
 /**
  * Get end points of all edges in a graph.
  */
-public class GetEdgeEndpoint extends Instruction
-{
-	// Output graph.
-	private Neo4jGraph targetGraph;
-	// Input graph.
-	private Neo4jGraph subjectGraph;
-	// End-point component (source / destination, or both)
-	private EdgeComponent component;
-
-	public GetEdgeEndpoint(Neo4jGraph targetGraph, Neo4jGraph subjectGraph, EdgeComponent component)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.component = component;
+public class GetEdgeEndpoint 
+	extends AbstractGetEdgeEndpoint<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
+	
+	public GetEdgeEndpoint(Neo4jGraph targetGraph, Neo4jGraph subjectGraph, EdgeComponent component){
+		super(targetGraph, subjectGraph, component);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		Neo4jExecutor ns = (Neo4jExecutor) ctx.getExecutor();
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){
 		String subjectEdgeTable = subjectGraph.getEdgeTableName();
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String query = "MATCH (child)-[" + EDGE_ALIAS + ":" + EDGE.toString() + "]->(parent) ";
@@ -70,29 +57,6 @@ public class GetEdgeEndpoint extends Instruction
 		{
 			query += " SET parent:" + targetVertexTable;
 		}
-		ns.executeQuery(query);
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "GetEdgeEndpoint";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("component");
-		inline_field_values.add(component.name().substring(1));
+		storage.executeQuery(query);
 	}
 }

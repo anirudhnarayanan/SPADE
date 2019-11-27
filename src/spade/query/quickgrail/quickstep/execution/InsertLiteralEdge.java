@@ -19,62 +19,33 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
-import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
-import spade.storage.quickstep.QuickstepExecutor;
-
 import java.util.ArrayList;
+
+import spade.query.quickgrail.core.execution.AbstractInsertLiteralEdge;
+import spade.query.quickgrail.core.kernel.ExecutionContext;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
+import spade.storage.Quickstep;
 
 /**
  * Insert a list of edges into a graph by ID.
  */
-public class InsertLiteralEdge extends Instruction
-{
-	// The target graph to insert the edges.
-	private QuickstepGraph targetGraph;
-	// Edge IDs to be inserted.
-	private ArrayList<String> edges;
-
-	public InsertLiteralEdge(QuickstepGraph targetGraph, ArrayList<String> edges)
-	{
-		this.targetGraph = targetGraph;
-		this.edges = edges;
+public class InsertLiteralEdge
+	extends AbstractInsertLiteralEdge<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
+	
+	public InsertLiteralEdge(QuickstepGraph targetGraph, ArrayList<String> edges){
+		super(targetGraph, edges);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		QuickstepExecutor qs = (QuickstepExecutor) ctx.getExecutor();
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
 		String prefix = "INSERT INTO " + targetGraph.getEdgeTableName() + " VALUES(";
 		StringBuilder sqlQuery = new StringBuilder();
-		for(String edge : edges)
+		for(String edge : getEdges())
 		{
 			sqlQuery.append(prefix + edge + ");\n");
 		}
-		qs.executeQuery(sqlQuery.toString());
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "InsertLiteralEdge";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("edges");
-		inline_field_values.add("{" + String.join(",", edges) + "}");
+		storage.executeQuery(sqlQuery.toString());
 	}
 }

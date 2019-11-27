@@ -19,19 +19,17 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import static spade.query.quickgrail.postgresql.core.CommonVariables.CHILD_VERTEX_KEY;
+import static spade.query.quickgrail.postgresql.core.CommonVariables.EDGE_TABLE;
+import static spade.query.quickgrail.postgresql.core.CommonVariables.PARENT_VERTEX_KEY;
+import static spade.query.quickgrail.postgresql.core.CommonVariables.PRIMARY_KEY;
+
+import spade.query.quickgrail.core.execution.AbstractGetShortestPath;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
 import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.storage.postgresql.PostgresExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.CHILD_VERTEX_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.EDGE_TABLE;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PARENT_VERTEX_KEY;
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PRIMARY_KEY;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
 
 /**
  * Similar to GetPath but the result graph only contains vertices / edges that
@@ -39,42 +37,24 @@ import static spade.query.quickgrail.postgresql.utility.CommonVariables.PRIMARY_
  * <p>
  * Warning: This operation could be very slow when the input graph is large.
  */
-public class GetShortestPath extends Instruction
-{
-	// Output graph.
-	private PostgreSQLGraph targetGraph;
-	// Input graph.
-	private PostgreSQLGraph subjectGraph;
-	// Set of source vertices.
-	private PostgreSQLGraph srcGraph;
-	// Set of destination vertices.
-	private PostgreSQLGraph dstGraph;
-	// Max path length.
-	private Integer maxDepth;
-
+public class GetShortestPath
+	extends AbstractGetShortestPath<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
+	
 	public GetShortestPath(PostgreSQLGraph targetGraph, PostgreSQLGraph subjectGraph,
 						   PostgreSQLGraph srcGraph, PostgreSQLGraph dstGraph,
-						   Integer maxDepth)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.srcGraph = srcGraph;
-		this.dstGraph = dstGraph;
-		this.maxDepth = maxDepth;
+						   Integer maxDepth){
+		super(targetGraph, subjectGraph, srcGraph, dstGraph, maxDepth);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		PostgresExecutor qs = (PostgresExecutor) ctx.getExecutor();
-
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
 		String filter;
-		qs.executeQuery("DROP TABLE IF EXISTS m_conn;" +
+		storage.executeQuery("DROP TABLE IF EXISTS m_conn;" +
 				"CREATE TABLE m_conn (\"" + CHILD_VERTEX_KEY + "\" UUID, \"" + PARENT_VERTEX_KEY + "\" UUID);");
 		if(env.IsBaseGraph(subjectGraph))
 		{
 			filter = "";
-			qs.executeQuery("INSERT INTO m_conn SELECT \"" + CHILD_VERTEX_KEY + "\", \"" + PARENT_VERTEX_KEY
+			storage.executeQuery("INSERT INTO m_conn SELECT \"" + CHILD_VERTEX_KEY + "\", \"" + PARENT_VERTEX_KEY
 					+ "\" FROM " + EDGE_TABLE + " GROUP BY \"" + CHILD_VERTEX_KEY + "\", \"" + PARENT_VERTEX_KEY + "\";");
 		}
 		else
@@ -82,7 +62,7 @@ public class GetShortestPath extends Instruction
 			String subjectEdgeTable = subjectGraph.getEdgeTableName();
 			filter = " AND " + EDGE_TABLE + "." + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM "
 					+ subjectEdgeTable + ")";
-			qs.executeQuery("DROP TABLE IF EXISTS m_sgedge;" +
+			storage.executeQuery("DROP TABLE IF EXISTS m_sgedge;" +
 					"CREATE TABLE m_sgedge (\"" + CHILD_VERTEX_KEY + "\" UUID, \"" + PARENT_VERTEX_KEY + "\" UUID);" +
 					"INSERT INTO m_sgedge SELECT \"" + CHILD_VERTEX_KEY + "\", \"" + PARENT_VERTEX_KEY + "\" FROM " +
 					EDGE_TABLE + " WHERE " + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " +
@@ -92,19 +72,19 @@ public class GetShortestPath extends Instruction
 		}
 
 		// Create subgraph edges table.
-		qs.executeQuery("DROP TABLE IF EXISTS m_sgconn;" +
+		storage.executeQuery("DROP TABLE IF EXISTS m_sgconn;" +
 				"CREATE TABLE m_sgconn (\"" + CHILD_VERTEX_KEY + "\" UUID, \"" + PARENT_VERTEX_KEY +
 				"\" UUID, reaching INT, depth INT);");
 
-		qs.executeQuery("DROP TABLE IF EXISTS m_cur;" +
+		storage.executeQuery("DROP TABLE IF EXISTS m_cur;" +
 				"DROP TABLE IF EXISTS m_next;" +
 				"DROP TABLE IF EXISTS m_answer;" +
 				"CREATE TABLE m_cur (" + PRIMARY_KEY + " UUID, reaching INT);" +
 				"CREATE TABLE m_next (" + PRIMARY_KEY + " INT, reaching INT);" +
 				"CREATE TABLE m_answer (" + PRIMARY_KEY + " UUID);");
 
-		qs.executeQuery("INSERT INTO m_cur SELECT " + PRIMARY_KEY + ", " + PRIMARY_KEY + " FROM " +
-				dstGraph.getVertexTableName() + ";" +
+		storage.executeQuery("INSERT INTO m_cur SELECT " + PRIMARY_KEY + ", " + PRIMARY_KEY + " FROM " +
+				destinationGraph.getVertexTableName() + ";" +
 				"INSERT INTO m_answer SELECT " + PRIMARY_KEY + " FROM m_cur GROUP BY " + PRIMARY_KEY + ";");
 
 		String loopStmts =
@@ -120,24 +100,24 @@ public class GetShortestPath extends Instruction
 						"INSERT INTO m_answer SELECT " + PRIMARY_KEY + " FROM m_cur GROUP BY " + PRIMARY_KEY + ";";
 		for(int i = 0; i < maxDepth; ++i)
 		{
-			qs.executeQuery(loopStmts.replace("$depth", String.valueOf(i + 1)));
+			storage.executeQuery(loopStmts.replace("$depth", String.valueOf(i + 1)));
 
 			String worksetSizeQuery = "COPY (SELECT COUNT(*) FROM m_cur) TO stdout;";
-			if(qs.executeQueryForLongResult(worksetSizeQuery) == 0)
+			if(storage.executeQueryForLongResult(worksetSizeQuery) == 0)
 			{
 				break;
 			}
 		}
 
-		qs.executeQuery("DROP TABLE IF EXISTS m_cur;" +
+		storage.executeQuery("DROP TABLE IF EXISTS m_cur;" +
 				"DROP TABLE IF EXISTS m_next;" +
 				"CREATE TABLE m_cur (" + PRIMARY_KEY + " UUID);" +
 				"CREATE TABLE m_next (" + PRIMARY_KEY + " UUID);");
 
-		qs.executeQuery("INSERT INTO m_cur SELECT " + PRIMARY_KEY + " FROM " + srcGraph.getVertexTableName() +
+		storage.executeQuery("INSERT INTO m_cur SELECT " + PRIMARY_KEY + " FROM " + sourceGraph.getVertexTableName() +
 				" WHERE " + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM m_answer);");
 
-		qs.executeQuery("DROP TABLE IF EXISTS m_answer;" +
+		storage.executeQuery("DROP TABLE IF EXISTS m_answer;" +
 				"CREATE TABLE m_answer (" + PRIMARY_KEY + " UUID);" +
 				"INSERT INTO m_answer SELECT " + PRIMARY_KEY + " FROM m_cur;");
 
@@ -153,10 +133,10 @@ public class GetShortestPath extends Instruction
 						"INSERT INTO m_answer SELECT " + PRIMARY_KEY + " FROM m_cur;";
 		for(int i = 0; i < maxDepth; ++i)
 		{
-			qs.executeQuery(loopStmts.replace("$depth", String.valueOf(i)));
+			storage.executeQuery(loopStmts.replace("$depth", String.valueOf(i)));
 
 			String worksetSizeQuery = "COPY (SELECT COUNT(*) FROM m_cur) TO stdout;";
-			if(qs.executeQueryForLongResult(worksetSizeQuery) == 0)
+			if(storage.executeQueryForLongResult(worksetSizeQuery) == 0)
 			{
 				break;
 			}
@@ -165,42 +145,16 @@ public class GetShortestPath extends Instruction
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
 
-		qs.executeQuery("INSERT INTO " + targetVertexTable + " SELECT " + PRIMARY_KEY + " FROM m_answer;" +
+		storage.executeQuery("INSERT INTO " + targetVertexTable + " SELECT " + PRIMARY_KEY + " FROM m_answer;" +
 				"INSERT INTO " + targetEdgeTable + " SELECT " + PRIMARY_KEY + " FROM " + EDGE_TABLE +
 				" WHERE \"" + CHILD_VERTEX_KEY + "\" IN (SELECT " + PRIMARY_KEY + " FROM m_answer)" +
 				" AND \"" + PARENT_VERTEX_KEY + "\" IN (SELECT " + PRIMARY_KEY + " FROM m_answer)" + filter + ";");
 
-		qs.executeQuery("DROP TABLE IF EXISTS m_cur;" +
+		storage.executeQuery("DROP TABLE IF EXISTS m_cur;" +
 				"DROP TABLE IF EXISTS m_next;" +
 				"DROP TABLE IF EXISTS m_answer;" +
 				"DROP TABLE IF EXISTS m_conn;" +
 				"DROP TABLE IF EXISTS m_sgconn;");
 	}
 
-	@Override
-	public String getLabel()
-	{
-		return "GetShortestPath";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("srcGraph");
-		inline_field_values.add(srcGraph.getName());
-		inline_field_names.add("dstGraph");
-		inline_field_values.add(dstGraph.getName());
-		inline_field_names.add("maxDepth");
-		inline_field_values.add(String.valueOf(maxDepth));
-	}
 }

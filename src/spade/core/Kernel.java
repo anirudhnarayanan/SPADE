@@ -127,7 +127,7 @@ public class Kernel
      */
     public static Set<AbstractStorage>storages;
 
-    public static AbstractStorage getStorage(String storageName)
+    public static AbstractStorage getStorageByName(String storageName)
     {
         for(AbstractStorage storage : storages)
         {
@@ -139,6 +139,17 @@ public class Kernel
         }
 
         return null;
+    }
+    
+    public static boolean isStoragePresentShallowCheck(AbstractStorage storage){
+    	for(AbstractStorage storageInUse : storages){
+            if(storageInUse == storage){ 
+            	// Check by reference only since only need to know if it is the same object.
+            	// Don't use 'equals'.
+                return true;
+            }
+        }
+        return false;
     }
     /**
      * Set of filters active on the local SPADE instance.

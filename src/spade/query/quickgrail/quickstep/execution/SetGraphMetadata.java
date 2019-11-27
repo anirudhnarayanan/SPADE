@@ -19,41 +19,28 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
+import static spade.query.quickgrail.core.entities.GraphMetadata.kDigits;
+
 import spade.query.quickgrail.core.entities.GraphMetadata.GraphMetadataComponent;
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractSetGraphMetadata;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
 import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
 import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
-import spade.storage.quickstep.QuickstepExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.core.entities.GraphMetadata.kDigits;
+import spade.storage.Quickstep;
 
 /**
  * This class is not yet used in the SPADE integrated QuickGrail.
  */
-public class SetGraphMetadata extends Instruction
-{
-	private QuickstepGraphMetadata targetMetadata;
-	private GraphMetadataComponent component;
-	private QuickstepGraph sourceGraph;
-	private String name;
-	private String value;
+public class SetGraphMetadata
+	extends AbstractSetGraphMetadata<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
 
 	public SetGraphMetadata(QuickstepGraphMetadata targetMetadata,
 							GraphMetadataComponent component,
 							QuickstepGraph sourceGraph,
 							String name,
-							String value)
-	{
-		this.targetMetadata = targetMetadata;
-		this.component = component;
-		this.sourceGraph = sourceGraph;
-		this.name = name;
-		this.value = value;
+							String value){
+		super(targetMetadata, component, sourceGraph, name, value);		
 	}
 
 	private static String FormatStringLiteral(String input)
@@ -102,56 +89,26 @@ public class SetGraphMetadata extends Instruction
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		QuickstepExecutor qs = (QuickstepExecutor) ctx.getExecutor();
-
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
 		String targetVertexTable = targetMetadata.getVertexTableName();
 		String targetEdgeTable = targetMetadata.getEdgeTableName();
 		String sourceVertexTable = sourceGraph.getVertexTableName();
 		String sourceEdgeTable = sourceGraph.getEdgeTableName();
 
-		qs.executeQuery("\\analyzerange " + sourceVertexTable + " " + sourceEdgeTable + "\n");
+		storage.executeQuery("\\analyzerange " + sourceVertexTable + " " + sourceEdgeTable + "\n");
 
 		if(component == GraphMetadataComponent.kVertex || component == GraphMetadataComponent.kBoth)
 		{
-			qs.executeQuery("INSERT INTO " + targetVertexTable +
+			storage.executeQuery("INSERT INTO " + targetVertexTable +
 					" SELECT id, " + FormatStringLiteral(name) + ", " + FormatStringLiteral(value) +
 					" FROM " + sourceVertexTable + " GROUP BY id;");
 		}
 
 		if(component == GraphMetadataComponent.kEdge || component == GraphMetadataComponent.kBoth)
 		{
-			qs.executeQuery("INSERT INTO " + targetEdgeTable +
+			storage.executeQuery("INSERT INTO " + targetEdgeTable +
 					" SELECT id, " + FormatStringLiteral(name) + ", " + FormatStringLiteral(value) +
 					" FROM " + sourceEdgeTable + " GROUP BY id;");
 		}
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "SetGraphMetadata";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetMetadata");
-		inline_field_values.add(targetMetadata.getName());
-		inline_field_names.add("component");
-		inline_field_values.add(component.name().substring(1));
-		inline_field_names.add("sourceGraph");
-		inline_field_values.add(sourceGraph.getName());
-		inline_field_names.add("name");
-		inline_field_values.add(name);
-		inline_field_names.add("value");
-		inline_field_values.add(value);
 	}
 }

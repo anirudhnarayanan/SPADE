@@ -19,86 +19,46 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractGetEdge;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
 import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.storage.postgresql.PostgresExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PRIMARY_KEY;
-import static spade.query.quickgrail.postgresql.utility.PostgresUtil.formatString;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
+import spade.storage.PostgreSQLSchema;
 
 /**
  * Get the a set of edges in a graph.
  */
-public class GetEdge extends Instruction
-{
-	// Output graph.
-	private PostgreSQLGraph targetGraph;
-	// Input graph.
-	private PostgreSQLGraph subjectGraph;
-	private String field;
-	private String operation;
-	private String value;
+public class GetEdge
+	extends AbstractGetEdge<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
 
-	public GetEdge(PostgreSQLGraph targetGraph, PostgreSQLGraph subjectGraph, String field, String operation, String value)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.field = field;
-		this.operation = operation;
-		this.value = value;
+	public GetEdge(PostgreSQLGraph targetGraph, PostgreSQLGraph subjectGraph, String field, String operation, String value){
+		super(targetGraph, subjectGraph, field, operation, value);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		PostgresExecutor qs = (PostgresExecutor) ctx.getExecutor();
-		StringBuilder sqlQuery = new StringBuilder(100);
-		sqlQuery.append("INSERT INTO " + targetGraph.getEdgeTableName() +
-				" SELECT " + PRIMARY_KEY + " FROM " + PostgreSQLGraph.GetBaseEdgeAnnotationTableName() + " WHERE ");
-		// TODO: handle wild card columns
-		if(!field.equals("*"))
-		{
-			sqlQuery.append(formatString(field, true) + operation + formatString(value, false));
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
+		PostgreSQLSchema schema = storage.getSchema();
+
+		String query = "insert into " + schema.formatTableNameForQuery(targetGraph.getEdgeTableName()) +
+				" select " + schema.formatColumnNameForQuery(schema.hashColumnName) + " from " +
+				schema.formatTableNameForQuery(schema.mainEdgeTableName) + " where ";
+		
+		if(!field.equals("*")){
+			query += schema.formatColumnNameForQuery(field) + " " + operation + " " +
+					schema.formatStringAsVarCharForQuery(value);
 		}
-		if(!env.IsBaseGraph(subjectGraph))
-		{
-			sqlQuery.append(" AND " + PRIMARY_KEY + " IN (SELECT " + PRIMARY_KEY + " FROM " +
-					subjectGraph.getEdgeTableName() + ")");
+		
+		if(!env.IsBaseGraph(subjectGraph)){
+			query += " and " + schema.formatColumnNameForQuery(schema.hashColumnName) + " in "
+					+ "(select " + schema.formatColumnNameForQuery(schema.hashColumnName) + " from "
+					+ schema.formatTableNameForQuery(subjectGraph.getEdgeTableName()) + ")";
 		}
-		sqlQuery.append(" GROUP BY " + PRIMARY_KEY + ";");
-
-		qs.executeQuery(sqlQuery.toString());
+		
+		query += " group by " + schema.formatColumnNameForQuery(schema.hashColumnName) + ";";
+		
+		storage.executeQuery(query);
 	}
 
-	@Override
-	public String getLabel()
-	{
-		return "GetEdge";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("field");
-		inline_field_values.add(field);
-		inline_field_names.add("operation");
-		inline_field_values.add(operation);
-		inline_field_names.add("value");
-		inline_field_values.add(value);
-	}
 }

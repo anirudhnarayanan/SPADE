@@ -19,50 +19,26 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractCreateEmptyGraphMetadata;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
+import spade.query.quickgrail.postgresql.core.PostgresUtil;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
 import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
-import spade.query.quickgrail.postgresql.utility.PostgresUtil;
-import spade.storage.postgresql.PostgresExecutor;
-
-import java.util.ArrayList;
+import spade.storage.PostgreSQL;
 
 /**
  * This class is not yet used in the SPADE integrated QuickGrail.
  */
-public class CreateEmptyGraphMetadata extends Instruction
-{
-	private PostgreSQLGraphMetadata metadata;
+public class CreateEmptyGraphMetadata
+	extends AbstractCreateEmptyGraphMetadata<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
 
-	public CreateEmptyGraphMetadata(PostgreSQLGraphMetadata metadata)
-	{
-		this.metadata = metadata;
+	public CreateEmptyGraphMetadata(PostgreSQLGraphMetadata metadata){
+		super(metadata);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		PostgresUtil.CreateEmptyGraphMetadata((PostgresExecutor) ctx.getExecutor(), metadata);
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "CreateEmptyGraphMetadata";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("metadata");
-		inline_field_values.add(metadata.getName());
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
+		PostgresUtil.CreateEmptyGraphMetadata(storage, metadata);
 	}
 }

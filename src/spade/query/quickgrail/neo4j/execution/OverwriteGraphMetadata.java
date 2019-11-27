@@ -19,58 +19,27 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractOverwriteGraphMetadata;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
 import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
-
-import java.util.ArrayList;
+import spade.storage.Neo4j;
 
 /**
  * This class is not yet used in the SPADE integrated QuickGrail.
  */
-public class OverwriteGraphMetadata extends Instruction
-{
-	private Neo4jGraphMetadata targetMetadata;
-	private Neo4jGraphMetadata lhsMetadata;
-	private Neo4jGraphMetadata rhsMetadata;
+public class OverwriteGraphMetadata
+	extends AbstractOverwriteGraphMetadata<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
 
 	public OverwriteGraphMetadata(Neo4jGraphMetadata targetMetadata,
 								  Neo4jGraphMetadata lhsMetadata,
-								  Neo4jGraphMetadata rhsMetadata)
-	{
-		this.targetMetadata = targetMetadata;
-		this.lhsMetadata = lhsMetadata;
-		this.rhsMetadata = rhsMetadata;
+								  Neo4jGraphMetadata rhsMetadata){
+		super(targetMetadata, lhsMetadata, rhsMetadata);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage)
+	{}
 
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "OverwritehGraphMetadata";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetMetadata");
-		inline_field_values.add(targetMetadata.getName());
-		inline_field_names.add("lhsMetadata");
-		inline_field_values.add(lhsMetadata.getName());
-		inline_field_names.add("rhsMetadata");
-		inline_field_values.add(rhsMetadata.getName());
-	}
 }

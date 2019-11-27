@@ -19,16 +19,12 @@
  */
 package spade.query.quickgrail.postgresql.entities;
 
-import spade.query.quickgrail.core.entities.EntityType;
-import spade.query.quickgrail.core.entities.GraphMetadata;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-
-import java.util.ArrayList;
+import spade.query.quickgrail.sql.entities.SQLGraphMetadata;
 
 /**
  * This class is not yet used in the SPADE integrated QuickGrail.
  */
-public class PostgreSQLGraphMetadata extends GraphMetadata
+public class PostgreSQLGraphMetadata extends SQLGraphMetadata
 {
 	private String name;
 
@@ -53,30 +49,5 @@ public class PostgreSQLGraphMetadata extends GraphMetadata
 	public String getEdgeTableName()
 	{
 		return name + "_edge";
-	}
-
-	@Override
-	public EntityType getEntityType()
-	{
-		return EntityType.kGraphMetadata;
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "GraphMetadata";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("name");
-		inline_field_values.add(name);
 	}
 }

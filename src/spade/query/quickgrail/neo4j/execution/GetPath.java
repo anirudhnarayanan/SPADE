@@ -19,51 +19,31 @@
  */
 package spade.query.quickgrail.neo4j.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.EDGE_ALIAS;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.VERTEX_ALIAS;
+
+import spade.query.quickgrail.core.execution.AbstractGetPath;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
 import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
-import spade.storage.neo4j.Neo4jExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.EDGE_ALIAS;
-import static spade.query.quickgrail.neo4j.utility.CommonVariables.VERTEX_ALIAS;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
+import spade.storage.Neo4j;
 
 /**
  * Get a graph that includes all the paths from a set of source vertices to a
  * set of destination vertices.
  */
-public class GetPath extends Instruction
-{
-	// Output graph.
-	private Neo4jGraph targetGraph;
-	// Input graph.
-	private Neo4jGraph subjectGraph;
-	// Set of source vertices.
-	private Neo4jGraph sourceGraph;
-	// Set of destination vertices.
-	private Neo4jGraph destinationGraph;
-	// Max path length.
-	private Integer maxDepth;
+public class GetPath
+	extends AbstractGetPath<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>{
 
 	public GetPath(Neo4jGraph targetGraph, Neo4jGraph subjectGraph,
 				   Neo4jGraph srcGraph, Neo4jGraph destinationGraph,
-				   Integer maxDepth)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.sourceGraph = srcGraph;
-		this.destinationGraph = destinationGraph;
-		this.maxDepth = maxDepth;
+				   Integer maxDepth){
+		super(targetGraph, subjectGraph, srcGraph, destinationGraph, maxDepth);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		Neo4jExecutor ns = (Neo4jExecutor) ctx.getExecutor();
-
+	public void execute(Neo4jEnvironment env, ExecutionContext ctx, Neo4j storage){
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
 		String subjectVertexTable = subjectGraph.getVertexTableName();
@@ -87,33 +67,6 @@ public class GetPath extends Instruction
 				EDGE_ALIAS + ".quickgrail_symbol " + " ELSE " + EDGE_ALIAS + ".quickgrail_symbol + '," +
 				targetEdgeTable + ",' END";
 
-		ns.executeQuery(cypherQuery);
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "GetPath";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("sourceGraph");
-		inline_field_values.add(sourceGraph.getName());
-		inline_field_names.add("destinationGraph");
-		inline_field_values.add(destinationGraph.getName());
-		inline_field_names.add("maxDepth");
-		inline_field_values.add(String.valueOf(maxDepth));
+		storage.executeQuery(cypherQuery);
 	}
 }

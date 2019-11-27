@@ -19,66 +19,42 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractDistinctifyGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
 import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.storage.postgresql.PostgresExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PRIMARY_KEY;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
+import spade.storage.PostgreSQLSchema;
 
 /**
  * Remove all duplicated vertices and edges.
  */
-public class DistinctifyGraph extends Instruction
-{
-	// Input graph.
-	private PostgreSQLGraph targetGraph;
-	// Output graph.
-	private PostgreSQLGraph sourceGraph;
+public class DistinctifyGraph
+	extends AbstractDistinctifyGraph<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
 
-	public DistinctifyGraph(PostgreSQLGraph targetGraph, PostgreSQLGraph sourceGraph)
-	{
-		this.targetGraph = targetGraph;
-		this.sourceGraph = sourceGraph;
+	public DistinctifyGraph(PostgreSQLGraph targetGraph, PostgreSQLGraph sourceGraph){
+		super(targetGraph, sourceGraph);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		String sourceVertexTable = sourceGraph.getVertexTableName();
-		String sourceEdgeTable = sourceGraph.getEdgeTableName();
-		String targetVertexTable = targetGraph.getVertexTableName();
-		String targetEdgeTable = targetGraph.getEdgeTableName();
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
+		PostgreSQLSchema schema = storage.getSchema();
+		
+		final String columnNameHash = schema.formatTableNameForQuery(schema.hashColumnName);
+		
+		final String tableNameTargetVertex = 
+				schema.formatTableNameForQuery(targetGraph.getVertexTableName());
+		final String tableNameTargetEdge = 
+				schema.formatTableNameForQuery(targetGraph.getEdgeTableName());
+		final String tableNameSourceVertex = 
+				schema.formatTableNameForQuery(sourceGraph.getVertexTableName());
+		final String tableNameSourceEdge = 
+				schema.formatTableNameForQuery(sourceGraph.getEdgeTableName());
 
-		PostgresExecutor qs = (PostgresExecutor) ctx.getExecutor();
-		qs.executeQuery("INSERT INTO " + targetVertexTable +
-				" SELECT " + PRIMARY_KEY + " FROM " + sourceVertexTable + " GROUP BY " + PRIMARY_KEY + ";");
-		qs.executeQuery("INSERT INTO " + targetEdgeTable +
-				" SELECT " + PRIMARY_KEY + " FROM " + sourceEdgeTable + " GROUP BY " + PRIMARY_KEY + ";");
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "DistinctifyGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("sourceGraph");
-		inline_field_values.add(sourceGraph.getName());
+		storage.executeQuery("insert into " + tableNameTargetVertex +
+				" select " + columnNameHash + " from " + tableNameSourceVertex + " group by " + columnNameHash + ";");
+		storage.executeQuery("insert into " + tableNameTargetEdge +
+				" select " + columnNameHash + " from " + tableNameSourceEdge + " group by " + columnNameHash + ";");
 	}
 }

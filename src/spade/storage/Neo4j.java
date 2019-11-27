@@ -19,16 +19,25 @@
  */
 package spade.storage;
 
+import static spade.core.Kernel.CONFIG_PATH;
+import static spade.core.Kernel.FILE_SEPARATOR;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.EDGE_ALIAS;
+import static spade.query.quickgrail.neo4j.core.CommonVariables.VERTEX_ALIAS;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -36,9 +45,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.LinkedList;
-import java.util.Calendar;
-import java.util.Date;
 
 import org.apache.commons.codec.digest.DigestUtils;
 import org.neo4j.graphalgo.GraphAlgoFactory;
@@ -48,6 +54,7 @@ import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Path;
+import org.neo4j.graphdb.PathExpanders;
 import org.neo4j.graphdb.QueryExecutionException;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.RelationshipType;
@@ -61,21 +68,21 @@ import org.neo4j.graphdb.index.IndexHits;
 import org.neo4j.graphdb.index.IndexManager;
 import org.neo4j.graphdb.index.RelationshipIndex;
 import org.neo4j.helpers.collection.Iterators;
-import org.neo4j.graphdb.PathExpanders;
 
 import spade.core.AbstractEdge;
 import spade.core.AbstractStorage;
 import spade.core.AbstractVertex;
+import spade.core.BloomFilter;
 import spade.core.Edge;
 import spade.core.Graph;
 import spade.core.Settings;
 import spade.core.Vertex;
-import spade.core.BloomFilter;
+import spade.query.quickgrail.core.kernel.QuickGrailExecutor;
+import spade.query.quickgrail.neo4j.core.Neo4jEnvironment;
+import spade.query.quickgrail.neo4j.core.Neo4jResolver;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraph;
+import spade.query.quickgrail.neo4j.entities.Neo4jGraphMetadata;
 import spade.utility.CommonFunctions;
-
-import static spade.core.Kernel.CONFIG_PATH;
-import static spade.core.Kernel.FILE_SEPARATOR;
-import static spade.core.Kernel.transformers;
 
 /**
  * Neo4j storage implementation.
@@ -1207,5 +1214,124 @@ public class Neo4j extends AbstractStorage
 
         System.out.println("Database shutdown started...");
         graphDb.shutdown();
+	}
+
+    private QuickGrailExecutor
+		<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j> 
+		executor = null;
+
+	@SuppressWarnings("unchecked")
+	public synchronized
+		QuickGrailExecutor<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j> 
+		getExecutor() throws Exception{
+		if(executor == null){
+			executor = new QuickGrailExecutor
+					<Neo4jGraph, Neo4jGraphMetadata, Neo4jEnvironment, Neo4j>
+					(this, new Neo4jResolver(), new Neo4jEnvironment(this));
+		}
+		return executor;
+	}
+    
+	/**
+	 * Submit a query and cast result as long type.
+	 */
+	public Long executeQueryForLongResult(String query)
+	{
+		globalTxCheckin(true);
+		try(Result result = executeQuery(query))
+		{
+			if(result.hasNext())
+			{
+				List<String> columns = result.columns();
+				String column = columns.get(0);
+				Map<String, Object> row = result.next();
+				return (Long) row.get(column);
+			}
+		}
+		catch(Exception ex)
+		{
+			throw new RuntimeException(
+					"Unexpected result from Neo4j: expecting a long value");
+		}
+		finally
+		{
+			globalTxCheckin(true);
+		}
+		return null;
+	}
+
+	public Set<String> executeQueryForLabels(String query)
+	{
+		Set<String> labelSet = new HashSet<>();
+		globalTxCheckin(true);
+		try(Result result = executeQuery(query))
+		{
+			if(result.hasNext())
+			{
+				Iterator<String> labels = result.columnAs("label");
+				while(labels.hasNext())
+				{
+					labelSet.add(labels.next());
+				}
+			}
+		}
+		catch(Exception ex)
+		{
+			throw new RuntimeException(
+					"Unexpected result from Neo4j: expecting a Map value");
+		}
+		finally
+		{
+			globalTxCheckin(true);
+		}
+		return labelSet;
+	}
+
+	public Set<Node> executeQueryForNodeSetResult(String query)
+	{
+		Set<Node> nodeSet = new HashSet<>();
+		globalTxCheckin(true);
+		try(Result result = executeQuery(query))
+		{
+			Iterator<Node> nodes = result.columnAs(VERTEX_ALIAS);
+			while(nodes.hasNext())
+			{
+				nodeSet.add(nodes.next());
+			}
+		}
+		catch(Exception ex)
+		{
+			throw new RuntimeException(
+					"Unexpected result from Neo4j: expecting a Set of Nodes");
+		}
+		finally
+		{
+			globalTxCheckin(true);
+		}
+		return nodeSet;
+	}
+
+	public Set<Relationship> executeQueryForRelationshipSetResult(String query)
+	{
+		Set<Relationship> relationshipSet = new HashSet<>();
+		globalTxCheckin(true);
+		try(Result result = executeQuery(query))
+		{
+			Iterator<Relationship> relationships = result.columnAs(EDGE_ALIAS);
+			while(relationships.hasNext())
+			{
+				relationshipSet.add(relationships.next());
+			}
+		}
+		catch(Exception ex)
+		{
+			throw new RuntimeException(
+					"Unexpected result from Neo4j: expecting a Set of Relationships");
+		}
+		finally
+		{
+			globalTxCheckin(true);
+		}
+		return relationshipSet;
 	}
 }

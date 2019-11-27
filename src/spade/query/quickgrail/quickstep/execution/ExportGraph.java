@@ -19,50 +19,40 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
+import static spade.query.quickgrail.core.entities.Graph.kNonForceDumpLimit;
+import static spade.query.quickgrail.core.entities.Graph.kNonForceVisualizeLimit;
+
+import java.util.HashMap;
+
 import spade.core.AbstractEdge;
 import spade.core.AbstractVertex;
 import spade.core.Edge;
 import spade.core.Vertex;
 import spade.query.quickgrail.core.entities.Graph.ExportFormat;
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractExportGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
+import spade.query.quickgrail.quickstep.core.QuickstepUtil;
 import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
-import spade.query.quickgrail.quickstep.utility.QuickstepUtil;
-import spade.storage.quickstep.QuickstepExecutor;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-
-import static spade.query.quickgrail.core.entities.Graph.kNonForceDumpLimit;
-import static spade.query.quickgrail.core.entities.Graph.kNonForceVisualizeLimit;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
+import spade.storage.Quickstep;
 
 /**
  * Export a QuickGrail graph to spade.core.Graph or to DOT representation.
  */
-public class ExportGraph extends Instruction
-{
-	private QuickstepGraph targetGraph;
-	private ExportFormat format;
-	private boolean force;
+public class ExportGraph
+	extends AbstractExportGraph<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
 
-	public ExportGraph(QuickstepGraph targetGraph, ExportFormat format, boolean force)
-	{
-		this.targetGraph = targetGraph;
-		this.format = format;
-		this.force = force;
+	public ExportGraph(QuickstepGraph targetGraph, ExportFormat format, boolean force){
+		super(targetGraph, format, force);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		QuickstepExecutor qs = (QuickstepExecutor) ctx.getExecutor();
-
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
 		if(!force)
 		{
-			long numVertices = QuickstepUtil.GetNumVertices(qs, targetGraph);
-			long numEdges = QuickstepUtil.GetNumEdges(qs, targetGraph);
+			long numVertices = QuickstepUtil.GetNumVertices(storage, targetGraph);
+			long numEdges = QuickstepUtil.GetNumEdges(storage, targetGraph);
 			long graphsize = numVertices + numEdges;
 			if(format == ExportFormat.kNormal && (graphsize > kNonForceDumpLimit))
 			{
@@ -80,7 +70,7 @@ public class ExportGraph extends Instruction
 			}
 		}
 
-		qs.executeQuery("DROP TABLE m_init_vertex;\n" +
+		storage.executeQuery("DROP TABLE m_init_vertex;\n" +
 				"DROP TABLE m_vertex;\n" +
 				"DROP TABLE m_edge;\n" +
 				"CREATE TABLE m_init_vertex(id INT);\n" +
@@ -89,7 +79,7 @@ public class ExportGraph extends Instruction
 
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
-		qs.executeQuery("INSERT INTO m_init_vertex" +
+		storage.executeQuery("INSERT INTO m_init_vertex" +
 				" SELECT id FROM " + targetVertexTable + ";\n" +
 				"INSERT INTO m_init_vertex" +
 				" SELECT src FROM edge WHERE id IN (SELECT id FROM " + targetEdgeTable + ");\n" +
@@ -99,10 +89,10 @@ public class ExportGraph extends Instruction
 				"INSERT INTO m_vertex SELECT id FROM m_init_vertex GROUP BY id;\n" +
 				"INSERT INTO m_edge SELECt id FROM " + targetEdgeTable + " GROUP BY id;");
 
-		HashMap<Integer, AbstractVertex> vertices = exportVertices(qs, "m_vertex");
-		HashMap<Long, AbstractEdge> edges = exportEdges(qs, "m_edge");
+		HashMap<Integer, AbstractVertex> vertices = exportVertices(storage, "m_vertex");
+		HashMap<Long, AbstractEdge> edges = exportEdges(storage, "m_edge");
 
-		qs.executeQuery("DROP TABLE m_init_vertex;\n" +
+		storage.executeQuery("DROP TABLE m_init_vertex;\n" +
 				"DROP TABLE m_vertex;\n" +
 				"DROP TABLE m_edge;");
 
@@ -121,21 +111,21 @@ public class ExportGraph extends Instruction
 	}
 
 	private HashMap<Integer, AbstractVertex> exportVertices(
-			QuickstepExecutor qs, String targetVertexTable)
+			Quickstep storage, String targetVertexTable)
 	{
 		HashMap<Integer, AbstractVertex> vertices = new HashMap<Integer, AbstractVertex>();
-		long numVertices = qs.executeQueryForLongResult(
+		long numVertices = storage.executeQueryForLongResult(
 				"COPY SELECT COUNT(*) FROM " + targetVertexTable + " TO stdout;");
 		if(numVertices == 0)
 		{
 			return vertices;
 		}
 
-		qs.executeQuery("\\analyzerange " + targetVertexTable + "\n");
+		storage.executeQuery("\\analyzerange " + targetVertexTable + "\n");
 
-		String vertexAnnoStr = qs.executeQuery(
+		String vertexAnnoStr = String.valueOf(storage.executeQuery(
 				"COPY SELECT * FROM vertex_anno WHERE id IN (SELECT id FROM " +
-						targetVertexTable + ") TO stdout WITH (DELIMITER e'\\n');");
+						targetVertexTable + ") TO stdout WITH (DELIMITER e'\\n');"));
 		String[] vertexAnnoLines = vertexAnnoStr.split("\n");
 		vertexAnnoStr = null;
 
@@ -156,18 +146,18 @@ public class ExportGraph extends Instruction
 	}
 
 	private HashMap<Long, AbstractEdge> exportEdges(
-			QuickstepExecutor qs, String targetEdgeTable)
+			Quickstep storage, String targetEdgeTable)
 	{
 		HashMap<Long, AbstractEdge> edges = new HashMap<Long, AbstractEdge>();
 
-		long numEdges = qs.executeQueryForLongResult(
+		long numEdges = storage.executeQueryForLongResult(
 				"COPY SELECT COUNT(*) FROM " + targetEdgeTable + " TO stdout;");
 		if(numEdges == 0)
 		{
 			return edges;
 		}
 
-		qs.executeQuery("DROP TABLE m_answer;\n" +
+		storage.executeQuery("DROP TABLE m_answer;\n" +
 				"CREATE TABLE m_answer(id INT);\n" +
 				"DROP TABLE m_answer_edge;\n" +
 				"CREATE TABLE m_answer_edge(id LONG, src INT, dst INT);\n" +
@@ -177,10 +167,10 @@ public class ExportGraph extends Instruction
 				"INSERT INTO m_answer SELECT src FROM m_answer_edge;\n" +
 				"INSERT INTO m_answer SELECT dst FROM m_answer_edge;");
 
-		HashMap<Integer, AbstractVertex> vertices = exportVertices(qs, "m_answer");
+		HashMap<Integer, AbstractVertex> vertices = exportVertices(storage, "m_answer");
 
-		String edgeStr = qs.executeQuery(
-				"COPY SELECT * FROM m_answer_edge TO stdout WITH (DELIMITER e'\\n');");
+		String edgeStr = String.valueOf(storage.executeQuery(
+				"COPY SELECT * FROM m_answer_edge TO stdout WITH (DELIMITER e'\\n');"));
 		String[] edgeLines = edgeStr.split("\n");
 		edgeStr = null;
 
@@ -194,9 +184,9 @@ public class ExportGraph extends Instruction
 		}
 		edgeLines = null;
 
-		String edgeAnnoStr = qs.executeQuery(
+		String edgeAnnoStr = String.valueOf(storage.executeQuery(
 				"COPY SELECT * FROM edge_anno WHERE id IN (SELECT id FROM " +
-						targetEdgeTable + ") TO stdout WITH (DELIMITER e'\\n');");
+						targetEdgeTable + ") TO stdout WITH (DELIMITER e'\\n');"));
 		String[] edgeAnnoLines = edgeAnnoStr.split("\n");
 		edgeAnnoStr = null;
 
@@ -212,31 +202,8 @@ public class ExportGraph extends Instruction
 			}
 			edge.addAnnotation(edgeAnnoLines[i + 1], edgeAnnoLines[i + 2]);
 		}
-		qs.executeQuery("DROP TABLE m_answer;\n" +
+		storage.executeQuery("DROP TABLE m_answer;\n" +
 				"DROP TABLE m_answer_edge;");
 		return edges;
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "ExportGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("format");
-		inline_field_values.add(format.name());
-		inline_field_names.add("force");
-		inline_field_values.add(String.valueOf(force));
 	}
 }

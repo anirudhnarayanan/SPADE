@@ -19,84 +19,53 @@
  */
 package spade.query.quickgrail.postgresql.execution;
 
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.execution.AbstractLimitGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
+import spade.query.quickgrail.postgresql.core.PostgreSQLEnvironment;
 import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
-import spade.storage.postgresql.PostgresExecutor;
-
-import java.util.ArrayList;
-
-import static spade.query.quickgrail.postgresql.utility.CommonVariables.PRIMARY_KEY;
+import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
+import spade.storage.PostgreSQL;
+import spade.storage.PostgreSQLSchema;
 
 /**
  * Sample a subset of vertices / edges from a graph.
  */
-public class LimitGraph extends Instruction
-{
-	// Output graph.
-	private PostgreSQLGraph targetGraph;
-	// Input graph.
-	private PostgreSQLGraph sourceGraph;
-	// The maximum number of vertices / edges to sample.
-	private int limit;
-
-	public LimitGraph(PostgreSQLGraph targetGraph, PostgreSQLGraph sourceGraph, int limit)
-	{
-		this.targetGraph = targetGraph;
-		this.sourceGraph = sourceGraph;
-		this.limit = limit;
+public class LimitGraph
+	extends AbstractLimitGraph<PostgreSQLGraph, PostgreSQLGraphMetadata, PostgreSQLEnvironment, PostgreSQL>{
+	
+	public LimitGraph(PostgreSQLGraph targetGraph, PostgreSQLGraph sourceGraph, int limit){
+		super(targetGraph, sourceGraph, limit);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
-		PostgresExecutor ps = (PostgresExecutor) ctx.getExecutor();
-
+	public void execute(PostgreSQLEnvironment env, ExecutionContext ctx, PostgreSQL storage){
 		String sourceVertexTable = sourceGraph.getVertexTableName();
 		String sourceEdgeTable = sourceGraph.getEdgeTableName();
 
-		long numVertices = ps.executeQueryForLongResult(
-				"COPY (SELECT COUNT(*) FROM " + sourceVertexTable + ") TO stdout;");
-		long numEdges = ps.executeQueryForLongResult(
-				"COPY (SELECT COUNT(*) FROM " + sourceEdgeTable + ") TO stdout;");
+		long numVertices = storage.getRowCountOfTableSafe(sourceVertexTable);
+		long numEdges = storage.getRowCountOfTableSafe(sourceEdgeTable);
 
-		if(numVertices > 0)
-		{
-			ps.executeQuery("INSERT INTO " + targetGraph.getVertexTableName() +
-					" SELECT " + PRIMARY_KEY + " FROM " + sourceVertexTable + " GROUP BY " + PRIMARY_KEY +
-					" LIMIT " + limit + ";");
+		PostgreSQLSchema schema = storage.getSchema();
+		
+		final String hashColumnFormatted = schema.formatColumnNameForQuery(schema.hashColumnName);
+		
+		final String sourceVertexFormatted = schema.formatTableNameForQuery(sourceVertexTable);
+		final String sourceEdgeFormatted = schema.formatTableNameForQuery(sourceEdgeTable);
+		
+		final String targetVertexFormatted = schema.formatTableNameForQuery(targetGraph.getVertexTableName());
+		final String targetEdgeFormatted = schema.formatTableNameForQuery(targetGraph.getEdgeTableName());
+		
+		if(numVertices > 0){
+			storage.executeQuery("insert into " + targetVertexFormatted + " select " + 
+					hashColumnFormatted + " from " + sourceVertexFormatted + " group by " + 
+					hashColumnFormatted + " limit " + limit + ";");
 
 		}
-		if(numEdges > 0)
-		{
-			ps.executeQuery("INSERT INTO " + targetGraph.getEdgeTableName() +
-					" SELECT " + PRIMARY_KEY + " FROM " + sourceEdgeTable + " GROUP BY " + PRIMARY_KEY +
-					" LIMIT " + limit + ";");
+		if(numEdges > 0){
+			storage.executeQuery("insert into " + targetEdgeFormatted + " select " + 
+					hashColumnFormatted + " from " + sourceEdgeFormatted + " group by " + 
+					hashColumnFormatted + " limit " + limit + ";");
 		}
 	}
 
-	@Override
-	public String getLabel()
-	{
-		return "LimitGraph";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("sourceGraph");
-		inline_field_values.add(sourceGraph.getName());
-		inline_field_names.add("limit");
-		inline_field_values.add(String.valueOf(limit));
-	}
 }

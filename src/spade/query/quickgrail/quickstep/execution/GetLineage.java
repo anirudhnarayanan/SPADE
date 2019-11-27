@@ -19,45 +19,29 @@
  */
 package spade.query.quickgrail.quickstep.execution;
 
-import spade.query.quickgrail.core.entities.Graph.Direction;
-import spade.query.quickgrail.core.kernel.AbstractEnvironment;
-import spade.query.quickgrail.core.kernel.ExecutionContext;
-import spade.query.quickgrail.core.kernel.Instruction;
-import spade.query.quickgrail.core.utility.TreeStringSerializable;
-import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
-import spade.storage.quickstep.QuickstepExecutor;
-
 import java.util.ArrayList;
+
+import spade.query.quickgrail.core.entities.Graph.Direction;
+import spade.query.quickgrail.core.execution.AbstractGetLineage;
+import spade.query.quickgrail.core.kernel.ExecutionContext;
+import spade.query.quickgrail.quickstep.core.QuickstepEnvironment;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraph;
+import spade.query.quickgrail.quickstep.entities.QuickstepGraphMetadata;
+import spade.storage.Quickstep;
 
 /**
  * Get the lineage of a set of vertices in a graph.
  */
-public class GetLineage extends Instruction
-{
-	// Output graph.
-	private QuickstepGraph targetGraph;
-	// Input graph.
-	private QuickstepGraph subjectGraph;
-	// Set of starting vertices.
-	private QuickstepGraph startGraph;
-	// Max depth.
-	private Integer depth;
-	// Direction (ancestors / descendants, or both).
-	private Direction direction;
+public class GetLineage
+	extends AbstractGetLineage<QuickstepGraph, QuickstepGraphMetadata, QuickstepEnvironment, Quickstep>{
 
 	public GetLineage(QuickstepGraph targetGraph, QuickstepGraph subjectGraph,
-					  QuickstepGraph startGraph, Integer depth, Direction direction)
-	{
-		this.targetGraph = targetGraph;
-		this.subjectGraph = subjectGraph;
-		this.startGraph = startGraph;
-		this.depth = depth;
-		this.direction = direction;
+					  QuickstepGraph startGraph, Integer depth, Direction direction){
+		super(targetGraph, subjectGraph, startGraph, depth, direction);
 	}
 
 	@Override
-	public void execute(AbstractEnvironment env, ExecutionContext ctx)
-	{
+	public void execute(QuickstepEnvironment env, ExecutionContext ctx, Quickstep storage){
 		ArrayList<Direction> oneDirs = new ArrayList<>();
 		if(direction == Direction.kBoth)
 		{
@@ -69,8 +53,6 @@ public class GetLineage extends Instruction
 			oneDirs.add(direction);
 		}
 
-		QuickstepExecutor qs = (QuickstepExecutor) ctx.getExecutor();
-
 		String targetVertexTable = targetGraph.getVertexTableName();
 		String targetEdgeTable = targetGraph.getEdgeTableName();
 
@@ -78,25 +60,25 @@ public class GetLineage extends Instruction
 		String filter = "";
 		if(!env.IsBaseGraph(subjectGraph))
 		{
-			qs.executeQuery("\\analyzerange " + subjectEdgeTable + "\n");
+			storage.executeQuery("\\analyzerange " + subjectEdgeTable + "\n");
 			filter = " AND edge.id IN (SELECT id FROM " + subjectEdgeTable + ")";
 		}
 
 		for(Direction oneDir : oneDirs)
 		{
-			executeOneDirection(oneDir, qs, filter);
-			qs.executeQuery("\\analyzerange m_answer m_answer_edge\n" +
+			executeOneDirection(oneDir, storage, filter);
+			storage.executeQuery("\\analyzerange m_answer m_answer_edge\n" +
 					"INSERT INTO " + targetVertexTable + " SELECT id FROM m_answer;\n" +
 					"INSERT INTO " + targetEdgeTable + " SELECT id FROM m_answer_edge GROUP BY id;");
 		}
 
-		qs.executeQuery("DROP TABLE m_cur;\n" +
+		storage.executeQuery("DROP TABLE m_cur;\n" +
 				"DROP TABLE m_next;\n" +
 				"DROP TABLE m_answer;\n" +
 				"DROP TABLE m_answer_edge;");
 	}
 
-	private void executeOneDirection(Direction dir, QuickstepExecutor qs, String filter)
+	private void executeOneDirection(Direction dir, Quickstep storage, String filter)
 	{
 		String src, dst;
 		if(dir == Direction.kAncestor)
@@ -111,7 +93,7 @@ public class GetLineage extends Instruction
 			dst = "src";
 		}
 
-		qs.executeQuery("DROP TABLE m_cur;\n" +
+		storage.executeQuery("DROP TABLE m_cur;\n" +
 				"DROP TABLE m_next;\n" +
 				"DROP TABLE m_answer;\n" +
 				"DROP TABLE m_answer_edge;\n" +
@@ -121,7 +103,7 @@ public class GetLineage extends Instruction
 				"CREATE TABLE m_answer_edge (id LONG);");
 
 		String startVertexTable = startGraph.getVertexTableName();
-		qs.executeQuery("INSERT INTO m_cur SELECT id FROM " + startVertexTable + ";\n" +
+		storage.executeQuery("INSERT INTO m_cur SELECT id FROM " + startVertexTable + ";\n" +
 				"INSERT INTO m_answer SELECT id FROM m_cur;");
 
 		String loopStmts =
@@ -138,40 +120,13 @@ public class GetLineage extends Instruction
 						"INSERT INTO m_answer SELECT id FROM m_cur;";
 		for(int i = 0; i < depth; ++i)
 		{
-			qs.executeQuery(loopStmts);
+			storage.executeQuery(loopStmts);
 
 			String worksetSizeQuery = "COPY SELECT COUNT(*) FROM m_cur TO stdout;";
-			if(qs.executeQueryForLongResult(worksetSizeQuery) == 0)
+			if(storage.executeQueryForLongResult(worksetSizeQuery) == 0)
 			{
 				break;
 			}
 		}
-	}
-
-	@Override
-	public String getLabel()
-	{
-		return "GetLineage";
-	}
-
-	@Override
-	protected void getFieldStringItems(
-			ArrayList<String> inline_field_names,
-			ArrayList<String> inline_field_values,
-			ArrayList<String> non_container_child_field_names,
-			ArrayList<TreeStringSerializable> non_container_child_fields,
-			ArrayList<String> container_child_field_names,
-			ArrayList<ArrayList<? extends TreeStringSerializable>> container_child_fields)
-	{
-		inline_field_names.add("targetGraph");
-		inline_field_values.add(targetGraph.getName());
-		inline_field_names.add("subjectGraph");
-		inline_field_values.add(subjectGraph.getName());
-		inline_field_names.add("startGraph");
-		inline_field_values.add(startGraph.getName());
-		inline_field_names.add("depth");
-		inline_field_values.add(String.valueOf(depth));
-		inline_field_names.add("direction");
-		inline_field_values.add(direction.name().substring(1));
 	}
 }

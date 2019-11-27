@@ -19,8 +19,9 @@
  */
 package spade.core;
 
-import spade.query.scaffold.Scaffold;
-import spade.query.scaffold.ScaffoldFactory;
+import static spade.core.Kernel.CONFIG_PATH;
+import static spade.core.Kernel.FILE_SEPARATOR;
+import static spade.core.Kernel.SPADE_ROOT;
 
 import java.io.FileInputStream;
 import java.util.HashSet;
@@ -33,9 +34,10 @@ import java.util.Stack;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static spade.core.Kernel.CONFIG_PATH;
-import static spade.core.Kernel.FILE_SEPARATOR;
-import static spade.core.Kernel.SPADE_ROOT;
+import spade.query.quickgrail.core.kernel.AbstractEnvironment;
+import spade.query.quickgrail.core.kernel.QuickGrailExecutor;
+import spade.query.scaffold.Scaffold;
+import spade.query.scaffold.ScaffoldFactory;
 
 
 /**
@@ -403,4 +405,12 @@ public abstract class AbstractStorage
     }
 
     public abstract Object executeQuery(String query);
+    
+    public <G extends spade.query.quickgrail.core.entities.Graph, 
+    		GM extends spade.query.quickgrail.core.entities.GraphMetadata, 
+    		E extends AbstractEnvironment<G, GM, S>, 
+    		S extends AbstractStorage> 
+    	QuickGrailExecutor<G, GM, E, S> getExecutor() throws Exception{
+    	throw new Exception("Query execution not supported for storage '"+this.getClass().getName()+"'");
+    }
 }
