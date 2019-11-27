@@ -137,7 +137,7 @@ public class CommandLine
                     {
                         continue;
                     }
-                    if(line.equals("exit"))
+                    if(line != null && (line.trim().equalsIgnoreCase("exit") || line.trim().equalsIgnoreCase("quit")))
                     {
                         clientOutputStream.println(line);
                         break;

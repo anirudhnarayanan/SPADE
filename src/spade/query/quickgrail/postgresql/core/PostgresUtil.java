@@ -68,13 +68,27 @@ public class PostgresUtil
 		throw new UnsupportedOperationException("GraphMetadata operations are not supported.");
 	}
 
-	public static ArrayList<String> GetAllTableNames(PostgreSQL storage)
-	{
-		String output = storage.executeCopy("COPY (SELECT table_name " +
+	public static ArrayList<String> GetAllTableNames(PostgreSQL storage){
+		String query = "SELECT table_name " +
 				"FROM information_schema.tables " +
 				"WHERE table_type='BASE TABLE' " +
-				"AND table_schema='public') TO stdout;");
-		return new ArrayList<>(Arrays.asList(output.split("\n")));
+				"AND table_schema='public';";
+		ResultSet result = storage.executeQuery(query);
+		java.util.ArrayList<String> list = new java.util.ArrayList<String>();
+		try{
+			if(result != null){
+				while(result.next()){
+					list.add(String.valueOf(result.getObject(1)));
+				}
+			}
+		}catch(Exception e){
+			throw new RuntimeException("Failed to get all table names", e);
+		}finally{
+			if(result != null){
+				try{result.close();}catch(Exception e){}
+			}
+		}
+		return list;
 	}
 
 	public static long GetNumVertices(PostgreSQL storage, PostgreSQLGraph graph){
@@ -147,7 +161,6 @@ public class PostgresUtil
 			return null;
 		}else{
 			List<Map<String, String>> listOfMaps = new ArrayList<Map<String, String>>();
-			
 			ResultSetMetaData metadata = resultSet.getMetaData();
 			int columnCount = metadata.getColumnCount();
 			Map<Integer, String> columnNames = new HashMap<>();

@@ -49,22 +49,22 @@ public class PostgreSQLSchema{
 	
 	// not formatted name
 	public String queryDropTableIfExists(String rawTableName){
-		return "drop table if exists " + formatTableNameForQuery(rawTableName);
+		return "drop table if exists " + formatTableNameForQuery(rawTableName) + ";";
 	}
 	
 	// not formatted name
 	public String queryCreateHashOnlyTable(String rawTableName){
-		return "create table " + formatTableNameForQuery(rawTableName) + " (" + formatColumnNameForQuery(hashColumnName) + " uuid)";
+		return "create table " + formatTableNameForQuery(rawTableName) + " (" + formatColumnNameForQuery(hashColumnName) + " uuid);";
 	}
 	
 	// not formatted name
 	public String queryCreateHashOnlyVertexTable(String rawTableName){
-		return "create table " + formatTableNameForQuery(rawTableName) + " (" + formatColumnNameForQuery(hashColumnName) + " uuid)";
+		return "create table " + formatTableNameForQuery(rawTableName) + " (" + formatColumnNameForQuery(hashColumnName) + " uuid);";
 	}
 	
 	// not formatted name
 	public String queryCreateHashOnlyEdgeTable(String rawTableName){
-		return "create table " + formatTableNameForQuery(rawTableName) + " (" + formatColumnNameForQuery(hashColumnName) + " uuid)";
+		return "create table " + formatTableNameForQuery(rawTableName) + " (" + formatColumnNameForQuery(hashColumnName) + " uuid);";
 	}
 	
 	public String queryGetRowCount(String rawTableName){

@@ -44,6 +44,8 @@ import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
 import spade.storage.PostgreSQL;
 import spade.storage.PostgreSQLSchema;
 
+import spade.utility.CommonFunctions;
+
 /**
  * Export a QuickGrail graph to spade.core.Graph or to DOT representation.
  */
@@ -96,7 +98,7 @@ public class ExportGraph
 				schema.formatColumnNameForQuery(schema.hashColumnName) + ";");
 
 		HashMap<String, AbstractVertex> vertices = exportVertices(storage, mVertexTable);
-		Set<AbstractEdge> edges = exportEdges(storage, "m_edge", vertices);
+		Set<AbstractEdge> edges = exportEdges(storage, mEdgeTable, vertices);
 
 		storage.executeQuery(
 				schema.queryDropTableIfExists(mVertexTable) +
@@ -134,13 +136,13 @@ public class ExportGraph
 						" where " + schema.formatColumnNameForQuery(hashColumnName) + 
 						" in (select " + schema.formatColumnNameForQuery(hashColumnName) + " from " +
 						schema.formatTableNameForQuery(targetVertexTable) + ");");
-				
 				List<Map<String, String>> listOfMaps = PostgresUtil.sqlTableAsListOfKeyValuesMap(resultSet);
+
 				if(listOfMaps == null){
 					// do nothing
 				}else{
 					for(Map<String, String> annotations : listOfMaps){
-						String hash = annotations.remove(hashColumnName); // remove if exists
+						String hash = sanitizeHash(annotations.remove(hashColumnName)); // remove if exists
 						if(hash == null){ // do what? TODO
 							
 						}else{
@@ -189,9 +191,9 @@ public class ExportGraph
 					// do nothing
 				}else{
 					for(Map<String, String> annotations : listOfMaps){
-						String edgeHash = annotations.remove(hashColumnName);
-						String childHash = annotations.remove(childHashColumnName);
-						String parentHash = annotations.remove(parentHashColumnName);
+						String edgeHash = sanitizeHash(annotations.remove(hashColumnName));
+						String childHash = sanitizeHash(annotations.remove(childHashColumnName));
+						String parentHash = sanitizeHash(annotations.remove(parentHashColumnName));
 						
 						AbstractEdge edge = inflateEdge(edgeHash, annotations, 
 								vertices.get(childHash), vertices.get(parentHash));
@@ -209,12 +211,37 @@ public class ExportGraph
 			return edges;
 		}
 	}
-	
+
+	private static String sanitizeHash(String hash){
+		if(hash == null){
+			return null;
+		}else{
+			return hash.replace("-", "");
+		}
+	}
+
+	public static Map<String, String> removeNullsAndEmptyOnes(Map<String, String> annotations){
+		Map<String, String> newAnnotations = new HashMap<String, String>();
+		if(annotations != null){
+			for(String key : annotations.keySet()){
+				//if(!CommonFunctions.isNullOrEmpty(key)){
+				if(key != null){
+					String value = annotations.get(key);
+					if(value != null){
+					//if(!CommonFunctions.isNullOrEmpty(value)){
+						newAnnotations.put(key, value);
+					}
+				}
+			}
+		}
+		return newAnnotations;
+	}
+
 	public static AbstractVertex inflateVertex(String hash,
     		Map<String, String> annotations){
 		if(annotations != null){
 			AbstractVertex vertex = new Vertex();
-			vertex.addAnnotations(annotations);
+			vertex.addAnnotations(removeNullsAndEmptyOnes(annotations));
 			return vertex;
 		}
 		return null;
@@ -225,7 +252,7 @@ public class ExportGraph
     	if(childVertex != null && parentVertex != null){
 	    	AbstractEdge edge = new spade.core.Edge(childVertex, parentVertex);
 	    	if(edgeAnnotations != null){
-	    		edge.addAnnotations(edgeAnnotations);
+	    		edge.addAnnotations(removeNullsAndEmptyOnes(edgeAnnotations));
 	    	}
 	    	return edge;
     	}
