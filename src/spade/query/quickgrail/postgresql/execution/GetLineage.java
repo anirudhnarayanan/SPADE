@@ -82,7 +82,7 @@ public class GetLineage
 					schema.formatTableNameForQuery(answerTable) + "; insert into " +
 					schema.formatTableNameForQuery(targetEdgeTable) + " select " +
 					schema.formatColumnNameForQuery(schema.hashColumnName) + " from " +
-					schema.formatTableNameForQuery(answerTable) + " group by " + 
+					schema.formatTableNameForQuery(edgeAnswerTable) + " group by " + 
 					schema.formatColumnNameForQuery(schema.hashColumnName) + ";");
 		}
 
