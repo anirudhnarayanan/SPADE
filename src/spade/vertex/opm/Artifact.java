@@ -36,7 +36,12 @@ public class Artifact extends AbstractVertex {
 	/**
      * Empty constructor - initializes an empty map for annotations.
      */
-    public Artifact() {
+	public Artifact(){
+		this(null);
+	}
+	
+    public Artifact(String bigHashCode) {
+    	super(bigHashCode);
         addAnnotation("type", "Artifact");
     }
 }

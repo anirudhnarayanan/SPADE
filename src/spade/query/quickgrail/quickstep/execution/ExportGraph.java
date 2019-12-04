@@ -23,11 +23,13 @@ import static spade.query.quickgrail.core.entities.Graph.kNonForceDumpLimit;
 import static spade.query.quickgrail.core.entities.Graph.kNonForceVisualizeLimit;
 
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 import spade.core.AbstractEdge;
 import spade.core.AbstractVertex;
 import spade.core.Edge;
-import spade.core.Vertex;
 import spade.query.quickgrail.core.entities.Graph.ExportFormat;
 import spade.query.quickgrail.core.execution.AbstractExportGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
@@ -123,24 +125,61 @@ public class ExportGraph
 
 		storage.executeQuery("\\analyzerange " + targetVertexTable + "\n");
 
+		String vertexHashStr = String.valueOf(storage.executeQuery(
+				"COPY SELECT * FROM vertex WHERE id IN (SELECT id FROM " +
+						targetVertexTable + ") TO stdout WITH (DELIMITER e'\\n');"));
+		String[] vertexHashLines = vertexHashStr.split("\n");
+		
+		if(vertexHashLines.length % 2 != 0){
+			throw new RuntimeException("Unexpected result. Expected repeat of "
+					+ "'<vertex_id> <newline> <vertex hash>' but is: " + vertexHashStr);
+		}
+		
+		Set<Integer> allVertexIds = new HashSet<Integer>();
+		
+		Map<Integer, String> vertexIdToVertexHash = new HashMap<Integer, String>();
+		
+		for(int i = 0; i < vertexHashLines.length; i += 2){
+			// TODO: accelerate with cache.
+			Integer id = Integer.parseInt(vertexHashLines[i]);
+			String hash = vertexHashLines[i + 1];
+			vertexIdToVertexHash.put(id, hash);
+			allVertexIds.add(id);
+		}
+		
 		String vertexAnnoStr = String.valueOf(storage.executeQuery(
 				"COPY SELECT * FROM vertex_anno WHERE id IN (SELECT id FROM " +
 						targetVertexTable + ") TO stdout WITH (DELIMITER e'\\n');"));
 		String[] vertexAnnoLines = vertexAnnoStr.split("\n");
 		vertexAnnoStr = null;
 
-		assert vertexAnnoLines.length % 3 == 0;
-		for(int i = 0; i < vertexAnnoLines.length; i += 3)
-		{
+		if(vertexAnnoLines.length % 3 != 0){
+			throw new RuntimeException("Unexpected result. Expected repeat of "
+					+ "'<vertex_id> <newline> <annotation key> <newline> <annotation value>' but is: " + vertexAnnoLines);
+		}
+		
+		Map<Integer, Map<String, String>> vertexIdToVertexAnnotations = new HashMap<Integer, Map<String, String>>();
+		
+		for(int i = 0; i < vertexAnnoLines.length; i += 3){
 			// TODO: accelerate with cache.
 			Integer id = Integer.parseInt(vertexAnnoLines[i]);
-			AbstractVertex vertex = vertices.get(id);
-			if(vertex == null)
-			{
-				vertex = new Vertex();
-				vertices.put(id, vertex);
+			String annotationKey = vertexAnnoLines[i + 1];
+			String annotationValue = vertexAnnoLines[i + 2];
+			
+			Map<String, String> annotationsMap = vertexIdToVertexAnnotations.get(id);
+			if(annotationsMap == null){
+				annotationsMap = new HashMap<String, String>();
+				vertexIdToVertexAnnotations.put(id, annotationsMap);
+				allVertexIds.add(id);
 			}
-			vertex.addAnnotation(vertexAnnoLines[i + 1], vertexAnnoLines[i + 2]);
+			
+			annotationsMap.put(annotationKey, annotationValue);
+		}
+		
+		for(Integer vertexId : allVertexIds){
+			String hash = vertexIdToVertexHash.get(vertexId);
+			Map<String, String> annotations = vertexIdToVertexAnnotations.get(vertexId);
+			vertices.put(vertexId, AbstractVertex.inflateVertexFromStorage(hash, annotations));
 		}
 		return vertices;
 	}

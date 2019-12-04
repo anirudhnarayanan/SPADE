@@ -37,6 +37,11 @@ public class Process extends AbstractVertex {
      * Empty constructor - initializes an empty map for annotations.
      */
     public Process() {
-        addAnnotation("type", "Process");
+        this(null);
+    }
+    
+    public Process(String bigHashCode){
+    	super(bigHashCode);
+    	addAnnotation("type", "Process");
     }
 }

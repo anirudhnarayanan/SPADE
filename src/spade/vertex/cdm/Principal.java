@@ -33,6 +33,11 @@ public class Principal extends AbstractVertex{
      * Empty constructor - initializes an empty map for annotations.
      */
 	public Principal(){
+		this(null);
+	}
+	
+	public Principal(String bigHashCode){
+		super(bigHashCode);
 		addAnnotation("type", "Principal");
 	}
 	

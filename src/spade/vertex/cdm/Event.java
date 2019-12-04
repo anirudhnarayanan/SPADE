@@ -33,6 +33,11 @@ public class Event extends AbstractVertex{
      * Empty constructor - initializes an empty map for annotations.
      */
 	public Event(){
+		this(null);
+	}
+	
+	public Event(String bigHashCode){
+		super(bigHashCode);
 		addAnnotation("type", "Event");
 	}
 	

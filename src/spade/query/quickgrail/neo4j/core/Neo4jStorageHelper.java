@@ -42,7 +42,6 @@ import org.neo4j.graphdb.Relationship;
 import spade.core.AbstractEdge;
 import spade.core.AbstractVertex;
 import spade.core.Edge;
-import spade.core.Vertex;
 import spade.storage.Neo4j;
 
 /**
@@ -111,20 +110,26 @@ public class Neo4jStorageHelper
 
 	private static AbstractVertex convertNodeToVertex(Node node)
 	{
-		AbstractVertex resultVertex = new Vertex();
+		//AbstractVertex resultVertex = new Vertex();
+		String bigHash = null;
+		Map<String, String> annotations = new HashMap<String, String>();
 		for(String key : node.getPropertyKeys())
 		{
 			if(!StringUtils.isBlank(key))
 			{
 				Object value = node.getProperty(key);
-				value = String.valueOf(value);
-				if(!key.equalsIgnoreCase(PRIMARY_KEY))
-				{
-					resultVertex.addAnnotation(key, (String) value);
+				if(value != null){
+					if(key.equalsIgnoreCase(PRIMARY_KEY)){
+						bigHash = value.toString();
+					}else{
+						annotations.put(key, value.toString());
+					}
 				}
 			}
 		}
-		return resultVertex;
+		AbstractVertex vertex = new spade.core.Vertex(bigHash);
+		vertex.addAnnotations(annotations);
+		return vertex;
 	}
 
 	public static Set<AbstractEdge> prepareEdgeSetFromNeo4jResult(Neo4j storage, String query,

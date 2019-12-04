@@ -37,6 +37,12 @@ public class Agent extends AbstractVertex {
      * Empty constructor - initializes an empty map for annotations.
      */
     public Agent() {
-        addAnnotation("type", "Agent");
+    	this(null);
+    }
+    
+    
+    public Agent(String bigHashCode){
+    	super(bigHashCode);
+    	addAnnotation("type", "Agent");
     }
 }

@@ -33,7 +33,6 @@ import java.util.logging.Logger;
 
 import spade.core.AbstractEdge;
 import spade.core.AbstractVertex;
-import spade.core.Vertex;
 import spade.query.quickgrail.core.entities.Graph.ExportFormat;
 import spade.query.quickgrail.core.execution.AbstractExportGraph;
 import spade.query.quickgrail.core.kernel.ExecutionContext;
@@ -43,8 +42,6 @@ import spade.query.quickgrail.postgresql.entities.PostgreSQLGraph;
 import spade.query.quickgrail.postgresql.entities.PostgreSQLGraphMetadata;
 import spade.storage.PostgreSQL;
 import spade.storage.PostgreSQLSchema;
-
-import spade.utility.CommonFunctions;
 
 /**
  * Export a QuickGrail graph to spade.core.Graph or to DOT representation.
@@ -146,7 +143,7 @@ public class ExportGraph
 						if(hash == null){ // do what? TODO
 							
 						}else{
-							AbstractVertex vertex = inflateVertex(hash, annotations);
+							AbstractVertex vertex = AbstractVertex.inflateVertexFromStorage(hash, removeNullsAndEmptyOnes(annotations));
 							if(vertex != null){
 								vertices.put(hash, vertex);
 							}
@@ -236,16 +233,6 @@ public class ExportGraph
 		}
 		return newAnnotations;
 	}
-
-	public static AbstractVertex inflateVertex(String hash,
-    		Map<String, String> annotations){
-		if(annotations != null){
-			AbstractVertex vertex = new Vertex();
-			vertex.addAnnotations(removeNullsAndEmptyOnes(annotations));
-			return vertex;
-		}
-		return null;
-    }
     
     public static AbstractEdge inflateEdge(String edgeHash, Map<String, String> edgeAnnotations,
     		AbstractVertex childVertex, AbstractVertex parentVertex){

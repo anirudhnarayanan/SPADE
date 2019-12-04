@@ -19,14 +19,14 @@
  */
 package spade.core;
 
-import com.mysql.jdbc.StringUtils;
-import org.apache.commons.codec.digest.DigestUtils;
-
 import java.io.Serializable;
 import java.util.Map;
 import java.util.TreeMap;
 
+import org.apache.commons.codec.digest.DigestUtils;
+
 import spade.reporter.audit.OPMConstants;
+import spade.utility.CommonFunctions;
 
 /**
  * This is the class from which other vertex classes (e.g., OPM vertices) are
@@ -50,6 +50,40 @@ public abstract class AbstractVertex implements Serializable
      * An integer indicating the depth of the vertex in the graph
      */
     private int depth;
+    
+    /**
+     * String big hash to be returned by bigHashCode function only if not null.
+     * If null then big hash computed using the annotations map.
+     */
+    private final String bigHashCode;
+    
+    /**
+     * Create a vertex without a fixed big hash.
+     */
+    public AbstractVertex(){
+    	this(null);
+    }
+    
+    /**
+     * Create a vertex with a fixed big hash.
+     * 
+     * @param bigHashCode String
+     */
+    public AbstractVertex(String bigHashCode){
+    	this.bigHashCode = bigHashCode;
+    }
+    
+    /**
+     * Computes MD5 hash of annotations in the vertex.
+     * Returns true if the vertex has a fixed big hash otherwise false
+     * 
+     * @return true/false
+     */
+    public final boolean isReferenceVertex(){
+    	return bigHashCode != null;
+    }
+    
+    
 
     public int getDepth() {
 		return depth;
@@ -86,7 +120,7 @@ public abstract class AbstractVertex implements Serializable
      */
     public final void addAnnotation(String key, String value)
     {
-        if(!StringUtils.isNullOrEmpty(key))
+        if(!CommonFunctions.isNullOrEmpty(key))
         {
             if(value == null)
             {
@@ -107,14 +141,7 @@ public abstract class AbstractVertex implements Serializable
         {
             String key = currentEntry.getKey();
             String value = currentEntry.getValue();
-            if(!StringUtils.isNullOrEmpty(key))
-            {
-                if(value == null)
-                {
-                    value = "";
-                }
-                addAnnotation(key, value);
-            }
+            addAnnotation(key, value);
         }
     }
 
@@ -149,23 +176,31 @@ public abstract class AbstractVertex implements Serializable
     }
 
     /**
-     * Computes MD5 hash of annotations in the vertex.
+     * Computes MD5 hash of annotations in the vertex if fixed hash field is null 
+     * else returns the fixed hash field.
      *
-     @return A 128-bit hash digest.
+     @return String
      */
-    public String bigHashCode()
-    {
-        return DigestUtils.md5Hex(this.toString());
+    public final String bigHashCode(){
+    	if(bigHashCode == null){
+    		return DigestUtils.md5Hex(this.toString());
+    	}else{
+    		return bigHashCode;
+    	}
     }
 
-
     /**
-     * Computes MD5 hash of annotations in the vertex
-     * @return 16 element byte array of the digest.
+     * Computes MD5 hash of annotations in the vertex if fixed hash field is null
+     * else returns the fixed hash field bytes.
+     * 
+     * @return bytes array
      */
-    public byte[] bigHashCodeBytes()
-    {
-        return DigestUtils.md5(this.toString());
+    public final byte[] bigHashCodeBytes(){
+    	if(bigHashCode == null){
+    		return DigestUtils.md5(this.toString());
+    	}else{
+    		return bigHashCode.getBytes();
+    	}
     }
 
     public boolean isCompleteNetworkVertex()
@@ -192,6 +227,11 @@ public abstract class AbstractVertex implements Serializable
         return false;
     }
     
+    /*
+     * MARKED 'toString' function AS "final" METHODS SINCE
+     * THE BIGHASHCODE DEPENDS ON 'TOSTRING'.
+     */
+    
     /**
      * Computes a function of the annotations in the vertex.
      *
@@ -200,7 +240,7 @@ public abstract class AbstractVertex implements Serializable
      * @return An integer-valued hash code.
      */
     @Override
-	public int hashCode(){
+	public final int hashCode(){
 		final int prime = 31;
 		int result = 1;
 		result = prime * result + ((annotations == null) ? 0 : annotations.hashCode());
@@ -208,7 +248,7 @@ public abstract class AbstractVertex implements Serializable
 	}
 
 	@Override
-	public boolean equals(Object obj){
+	public final boolean equals(Object obj){
 		if(this == obj)
 			return true;
 		if(obj == null)
@@ -225,7 +265,7 @@ public abstract class AbstractVertex implements Serializable
 	}
 	
     @Override
-    public String toString()
+    public final String toString()
     {
         return "AbstractVertex{" +
                 "annotations=" + annotations +
@@ -239,4 +279,13 @@ public abstract class AbstractVertex implements Serializable
 				"\t\t\tannotations:" + annotations + ",\n" +
 				"\t\t}";
 	}
+	
+	public static AbstractVertex inflateVertexFromStorage(String hash,
+    		Map<String, String> annotations){
+		AbstractVertex vertex = new Vertex(hash);
+		if(annotations != null){
+			vertex.addAnnotations(annotations);
+		}
+		return vertex;
+    }
 }
