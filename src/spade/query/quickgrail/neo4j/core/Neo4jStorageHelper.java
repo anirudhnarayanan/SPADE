@@ -110,7 +110,6 @@ public class Neo4jStorageHelper
 
 	private static AbstractVertex convertNodeToVertex(Node node)
 	{
-		//AbstractVertex resultVertex = new Vertex();
 		String bigHash = null;
 		Map<String, String> annotations = new HashMap<String, String>();
 		for(String key : node.getPropertyKeys())
@@ -127,8 +126,7 @@ public class Neo4jStorageHelper
 				}
 			}
 		}
-		AbstractVertex vertex = new spade.core.Vertex(bigHash);
-		vertex.addAnnotations(annotations);
+		AbstractVertex vertex = AbstractVertex.inflateVertexFromStorage(bigHash, annotations);
 		return vertex;
 	}
 

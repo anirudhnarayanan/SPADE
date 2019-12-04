@@ -139,14 +139,10 @@ public class ExportGraph
 					// do nothing
 				}else{
 					for(Map<String, String> annotations : listOfMaps){
-						String hash = sanitizeHash(annotations.remove(hashColumnName)); // remove if exists
-						if(hash == null){ // do what? TODO
-							
-						}else{
-							AbstractVertex vertex = AbstractVertex.inflateVertexFromStorage(hash, removeNullsAndEmptyOnes(annotations));
-							if(vertex != null){
-								vertices.put(hash, vertex);
-							}
+						String hash = sanitizeHash(annotations.remove(hashColumnName)); // remove hash from annotations if exists
+						AbstractVertex vertex = AbstractVertex.inflateVertexFromStorage(hash, removeNullsAndEmptyOnes(annotations));
+						if(vertex != null){
+							vertices.put(hash, vertex);
 						}
 					}
 				}

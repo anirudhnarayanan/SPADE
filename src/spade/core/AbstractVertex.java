@@ -43,8 +43,9 @@ public abstract class AbstractVertex implements Serializable
 	private static final long serialVersionUID = 4766085487390172973L;
 	/**
      * A map containing the annotations for this vertex.
+     * 
      */
-    protected Map<String, String> annotations = new TreeMap<>();
+    private final Map<String, String> annotations = new TreeMap<>();
 
     /**
      * An integer indicating the depth of the vertex in the graph
@@ -54,6 +55,7 @@ public abstract class AbstractVertex implements Serializable
     /**
      * String big hash to be returned by bigHashCode function only if not null.
      * If null then big hash computed using the annotations map.
+     * A vertex with non-null big hash is a reference vertex otherwise non-reference vertex.
      */
     private final String bigHashCode;
     
@@ -182,10 +184,10 @@ public abstract class AbstractVertex implements Serializable
      @return String
      */
     public final String bigHashCode(){
-    	if(bigHashCode == null){
-    		return DigestUtils.md5Hex(this.toString());
-    	}else{
+    	if(isReferenceVertex()){
     		return bigHashCode;
+    	}else{
+    		return DigestUtils.md5Hex(this.toString());
     	}
     }
 
@@ -196,10 +198,10 @@ public abstract class AbstractVertex implements Serializable
      * @return bytes array
      */
     public final byte[] bigHashCodeBytes(){
-    	if(bigHashCode == null){
-    		return DigestUtils.md5(this.toString());
-    	}else{
+    	if(isReferenceVertex()){
     		return bigHashCode.getBytes();
+    	}else{
+    		return DigestUtils.md5(this.toString());
     	}
     }
 
@@ -232,6 +234,11 @@ public abstract class AbstractVertex implements Serializable
      * THE BIGHASHCODE DEPENDS ON 'TOSTRING'.
      */
     
+    @Override
+    public final String toString(){
+    	return "AbstractVertex{annotations="+annotations+", bigHashCode="+bigHashCode()+"}";
+	}
+
     /**
      * Computes a function of the annotations in the vertex.
      *
@@ -239,37 +246,43 @@ public abstract class AbstractVertex implements Serializable
      *
      * @return An integer-valued hash code.
      */
-    @Override
-	public final int hashCode(){
+	@Override
+	public int hashCode(){
 		final int prime = 31;
 		int result = 1;
 		result = prime * result + ((annotations == null) ? 0 : annotations.hashCode());
+		result = prime * result + (bigHashCode().hashCode());
 		return result;
 	}
 
 	@Override
-	public final boolean equals(Object obj){
-		if(this == obj)
+	public boolean equals(Object obj){
+		if(this == obj){
 			return true;
-		if(obj == null)
-			return false;
-		if(getClass() != obj.getClass())
-			return false;
-		AbstractVertex other = (AbstractVertex) obj;
-		if(annotations == null){
-			if(other.annotations != null)
+		}else{
+			if(obj == null){
 				return false;
-		}else if(!annotations.equals(other.annotations))
-			return false;
-		return true;
-	}
-	
-    @Override
-    public final String toString()
-    {
-        return "AbstractVertex{" +
-                "annotations=" + annotations +
-				"}";
+			}else{
+				if(!this.getClass().equals(obj.getClass())){
+					return false;
+				}else{
+					AbstractVertex that = (AbstractVertex)obj;
+					String thisBigHashCode = this.bigHashCode();
+					String thatBigHashCode = that.bigHashCode();
+					if(!thisBigHashCode.equals(thatBigHashCode)){
+						return false;
+					}else{
+						Map<String, String> thisAnnotations = getAnnotations();
+						Map<String, String> thatAnnotations = that.getAnnotations();
+						if(!thisAnnotations.equals(thatAnnotations)){
+							return false;
+						}else{
+							return true;
+						}
+					}
+				}
+			}
+		}
 	}
 
 	public String prettyPrint()

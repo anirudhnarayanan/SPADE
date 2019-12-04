@@ -140,7 +140,6 @@ public class ExportGraph
 		Map<Integer, String> vertexIdToVertexHash = new HashMap<Integer, String>();
 		
 		for(int i = 0; i < vertexHashLines.length; i += 2){
-			// TODO: accelerate with cache.
 			Integer id = Integer.parseInt(vertexHashLines[i]);
 			String hash = vertexHashLines[i + 1];
 			vertexIdToVertexHash.put(id, hash);
